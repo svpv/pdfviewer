@@ -37,12 +37,10 @@
 // MySplashOutputDev
 //------------------------------------------------------------------------
 
-static FixedPoint V70 = (FixedPoint)70.0;
-
 void MySplashOutputDev::setup(GBool usereflow, int sp,
-							  int dispx, int dispy, int dispw, int disph,
-							  FixedPoint x, FixedPoint y, FixedPoint w, FixedPoint h,
-							  FixedPoint res)
+		int dispx, int dispy, int dispw, int disph,
+		double x, double y, double w, double h,
+		double res)
 {
 
 	int xx, yy, ww, hh;
@@ -58,15 +56,15 @@ void MySplashOutputDev::setup(GBool usereflow, int sp,
 		pagey = y;
 		pagew = w;
 		pageh = h;
-		dcx = (FixedPoint)dispx;
-		dcy = (FixedPoint)dispy;
-		dcw = (FixedPoint)dispw;
-		dch = (FixedPoint)disph;
+		dcx = dispx;
+		dcy = dispy;
+		dcw = dispw;
+		dch = disph;
 
-		xx = (int)(x.getRaw() >> 8);
-		yy = (int)(y.getRaw() >> 8);
-		ww = (int)(w.getRaw() >> 8);
-		hh = (int)(h.getRaw() >> 8);
+		xx = (int)(x * 256.0);
+		yy = (int)(y * 256.0);
+		ww = (int)(w * 256.0);
+		hh = (int)(h * 256.0);
 		//fprintf(stderr, "---[%i,%i,%i,%i:%i,%i]---\n", (int)x,(int)y,(int)w,(int)h,(int)dcw,(int)dch);
 		iv_reflow_start(xx, yy, ww, hh, (int)res);
 	}
@@ -77,10 +75,11 @@ void MySplashOutputDev::setup(GBool usereflow, int sp,
 
 }
 
-void MySplashOutputDev::drawChar(GfxState* state, FixedPoint x, FixedPoint y,
-								 FixedPoint dx, FixedPoint dy,
-								 FixedPoint originX, FixedPoint originY,
-								 CharCode code, int nBytes, Unicode* u, int uLen)
+void MySplashOutputDev::drawChar(GfxState* state,
+		double x, double y,
+		double dx, double dy,
+		double originX, double originY,
+		CharCode code, int nBytes, Unicode* u, int uLen)
 {
 
 	static Unicode lastu = 0xffffffff;
@@ -94,24 +93,30 @@ void MySplashOutputDev::drawChar(GfxState* state, FixedPoint x, FixedPoint y,
 		return;
 	}
 
+#if 0
 	checkFontUpdate(state);
-	FixedPoint fs = getCurrentFont()->getSize();
+	double fs = getCurrentFont()->getSize();
 	if (fs >= 51)
 	{
 		state->setFontSize((state->getFontSize() / fs) * 50);
 		updateFont(state);
 		checkFontUpdate(state);
 	}
+#endif
 
 	if (subpage == -1)
 	{
-		FixedPoint csize = ((getCurrentFont()->getSize()) * V70) / ares;
+#if 0
+		double csize = ((getCurrentFont()->getSize()) * 70.0) / ares;
+#else
+		double csize = 8;
+#endif
 		int c = (u != NULL) ? *u : code;
 		if ((u != NULL) && (lastu == *u) && (code != lastcode)) c = '-';
-		int xx = (int)(x.getRaw() >> 8);
-		int yy = (int)(y.getRaw() >> 8);
-		int ww = (int)(dx.getRaw() >> 8);
-		int hh = (int)(csize.getRaw() >> 8);
+		int xx = (int)(x * 256.0);
+		int yy = (int)(y * 256.0);
+		int ww = (int)(dx * 256.0);
+		int hh = (int)(csize * 256.0);
 		iv_reflow_addchar(c, xx, yy, ww, hh);
 		lastu = (u == NULL) ? 0 : *u;
 		lastcode = code;
@@ -120,21 +125,21 @@ void MySplashOutputDev::drawChar(GfxState* state, FixedPoint x, FixedPoint y,
 	{
 		int cx, cy;
 		if (! iv_reflow_getchar(&cx, &cy)) return;
-		FixedPoint cxx = FixedPoint::make(cx << 8);
-		FixedPoint cyy = FixedPoint::make(cy << 8);
+		double cxx = ((double)cx / 256.0);
+		double cyy = ((double)cy / 256.0);
 		SplashOutputDev::drawChar(state, cxx, cyy,
 								  dx, dy, originX, originY, code, nBytes, u, uLen);
 	}
 
 }
 
-void MySplashOutputDev::add_image(FixedPoint* m)
+void MySplashOutputDev::add_image(double* m)
 {
 
-	int xx = (int)(((m[4] / dcw) * pagew).getRaw() >> 8);
-	int yy = (int)((pagey - (m[5] / dch) * pageh).getRaw() >> 8);
-	int ww = (int)(((m[0] / dcw) * pagew).getRaw() >> 8);
-	int hh = (int)((((-m[3]) / dch) * pageh).getRaw() >> 8);
+	int xx = (int)(((m[4] / dcw) * pagew) * 256.0);
+	int yy = (int)((pagey - (m[5] / dch) * pageh) * 256.0);
+	int ww = (int)(((m[0] / dcw) * pagew) * 256.0);
+	int hh = (int)((((-m[3]) / dch) * pageh) * 256.0);
 
 	if (ww < 0)
 	{
@@ -153,20 +158,20 @@ void MySplashOutputDev::add_image(FixedPoint* m)
 
 }
 
-int MySplashOutputDev::get_image(FixedPoint* m)
+int MySplashOutputDev::get_image(double* m)
 {
 
 	int x, y, sc;
 
 	if (! iv_reflow_getimage(&x, &y, &sc)) return 0;
 
-	m[4] = (FixedPoint::make(x << 8) / pagew) * dcw;
-	m[5] = ((pagey - FixedPoint::make(y << 8)) / pageh) * dch;
+	m[4] = (((double)x / 256.0) / pagew) * dcw;
+	m[5] = ((pagey - ((double)y / 256.0)) / pageh) * dch;
 
 	if (sc != 1000)
 	{
-		m[0] = (m[0] / (FixedPoint)1000) * (FixedPoint)sc;
-		m[3] = (m[3] / (FixedPoint)1000) * (FixedPoint)sc;
+		m[0] = (m[0] / 1000) * sc;
+		m[3] = (m[3] / 1000) * sc;
 	}
 
 	if (m[0] < 0) m[4] -= m[0];
@@ -193,17 +198,19 @@ static void eat(Stream* str, int n)
 }
 
 void MySplashOutputDev::drawImageMask(GfxState* state, Object* ref, Stream* str,
-									  int width, int height, GBool invert,
-									  GBool inlineImg)
+		int width, int height, GBool invert,
+		GBool interpolate, GBool inlineImg)
 {
 
 	if (! reflow)
 	{
-		SplashOutputDev::drawImageMask(state, ref, str, width, height, invert, inlineImg);
+		SplashOutputDev::drawImageMask(state, ref, str,
+				width, height, invert,
+				interpolate, inlineImg);
 		return;
 	}
 
-	FixedPoint* m = state->getCTM();
+	double* m = state->getCTM();
 	int n = height * ((width + 7) / 8);
 	if (subpage == -1)
 	{
@@ -215,7 +222,9 @@ void MySplashOutputDev::drawImageMask(GfxState* state, Object* ref, Stream* str,
 	{
 		if (get_image(m))
 		{
-			SplashOutputDev::drawImageMask(state, ref, str, width, height, invert, inlineImg);
+			SplashOutputDev::drawImageMask(state, ref, str,
+					width, height, invert,
+					interpolate, inlineImg);
 		}
 		else
 		{
@@ -226,17 +235,21 @@ void MySplashOutputDev::drawImageMask(GfxState* state, Object* ref, Stream* str,
 }
 
 void MySplashOutputDev::drawImage(GfxState* state, Object* ref, Stream* str,
-								  int width, int height, GfxImageColorMap* colorMap,
-								  int* maskColors, GBool inlineImg)
+		int width, int height, GfxImageColorMap* colorMap,
+		GBool interpolate, int* maskColors, GBool inlineImg)
 {
 
 	if (! reflow)
 	{
-		SplashOutputDev::drawImage(state, ref, str, width, height, colorMap, maskColors, inlineImg);
+		SplashOutputDev::drawImage(state, ref, str,
+				width, height, colorMap,
+				interpolate, maskColors, inlineImg);
+
+
 		return;
 	}
 
-	FixedPoint* m = state->getCTM();
+	double* m = state->getCTM();
 	int n = height * ((width * colorMap->getNumPixelComps() * colorMap->getBits() + 7) / 8);
 	if (subpage == -1)
 	{
@@ -248,7 +261,9 @@ void MySplashOutputDev::drawImage(GfxState* state, Object* ref, Stream* str,
 	{
 		if (get_image(m))
 		{
-			SplashOutputDev::drawImage(state, ref, str, width, height, colorMap, maskColors, inlineImg);
+			SplashOutputDev::drawImage(state, ref, str,
+					width, height, colorMap,
+					interpolate, maskColors, inlineImg);
 		}
 		else
 		{
@@ -259,20 +274,22 @@ void MySplashOutputDev::drawImage(GfxState* state, Object* ref, Stream* str,
 }
 
 void MySplashOutputDev::drawMaskedImage(GfxState* state, Object* ref, Stream* str,
-										int width, int height,
-										GfxImageColorMap* colorMap,
-										Stream* maskStr, int maskWidth, int maskHeight,
-										GBool maskInvert)
+	       int width, int height,
+	       GfxImageColorMap* colorMap, GBool interpolate, Stream * maskStr,
+	       int maskWidth, int maskHeight,
+	       GBool maskInvert, GBool maskInterpolate)
 {
-
-
 	if (! reflow)
 	{
-		SplashOutputDev::drawMaskedImage(state, ref, str, width, height, colorMap, maskStr, maskWidth, maskHeight, maskInvert);
+		SplashOutputDev::drawMaskedImage(state, ref, str,
+				width, height,
+				colorMap, interpolate, maskStr,
+				maskWidth, maskHeight,
+				maskInvert, maskInterpolate);
 		return;
 	}
 
-	FixedPoint* m = state->getCTM();
+	double* m = state->getCTM();
 	if (subpage == -1)
 	{
 		//ddprintf("MI(%i,%i,%i,%i,%i,%i)", (int)m[0],(int)m[1],(int)m[2],(int)m[3],(int)m[4],(int)m[5]);
@@ -282,27 +299,35 @@ void MySplashOutputDev::drawMaskedImage(GfxState* state, Object* ref, Stream* st
 	{
 		if (get_image(m))
 		{
-			SplashOutputDev::drawMaskedImage(state, ref, str, width, height, colorMap, maskStr, maskWidth, maskHeight, maskInvert);
+			SplashOutputDev::drawMaskedImage(state, ref, str,
+					width, height,
+					colorMap, interpolate, maskStr,
+					maskWidth, maskHeight,
+					maskInvert, maskInterpolate);
 		}
 	}
 
 }
 
 void MySplashOutputDev::drawSoftMaskedImage(GfxState* state, Object* ref, Stream* str,
-	int width, int height,
-	GfxImageColorMap* colorMap,
-	Stream* maskStr,
-	int maskWidth, int maskHeight,
-	GfxImageColorMap* maskColorMap)
+		int width, int height,
+		GfxImageColorMap* colorMap,
+		GBool interpolate,
+		Stream* maskStr,
+		int maskWidth, int maskHeight,
+		GfxImageColorMap* maskColorMap,
+		GBool maskInterpolate)
 {
 
 	if (! reflow)
 	{
-		SplashOutputDev::drawSoftMaskedImage(state, ref, str, width, height, colorMap, maskStr, maskWidth, maskHeight, maskColorMap);
+		SplashOutputDev::drawSoftMaskedImage(state, ref, str,
+				width, height, colorMap, interpolate, maskStr,
+				maskWidth, maskHeight, maskColorMap, maskInterpolate);
 		return;
 	}
 
-	FixedPoint* m = state->getCTM();
+	double* m = state->getCTM();
 	if (subpage == -1)
 	{
 		//ddprintf("SMI(%i,%i,%i,%i,%i,%i)", (int)m[0],(int)m[1],(int)m[2],(int)m[3],(int)m[4],(int)m[5]);
@@ -312,7 +337,9 @@ void MySplashOutputDev::drawSoftMaskedImage(GfxState* state, Object* ref, Stream
 	{
 		if (get_image(m))
 		{
-			SplashOutputDev::drawSoftMaskedImage(state, ref, str, width, height, colorMap, maskStr, maskWidth, maskHeight, maskColorMap);
+			SplashOutputDev::drawSoftMaskedImage(state, ref, str,
+					width, height, colorMap, interpolate, maskStr,
+					maskWidth, maskHeight, maskColorMap, maskInterpolate);
 		}
 	}
 
@@ -322,7 +349,7 @@ void MySplashOutputDev::getWordList(iv_wlist** word_list, int* wlist_len, int sp
 
 	iv_wlist* wl;
 	int i, x, y, w, h, csp, nwords, cn;
-	FixedPoint fx, fy, fw, fh;
+	double fx, fy, fw, fh;
 	char* s;
 
 	nwords = iv_reflow_words();
@@ -340,10 +367,10 @@ void MySplashOutputDev::getWordList(iv_wlist** word_list, int* wlist_len, int sp
 	{
 		s = iv_reflow_getword(i, &csp, &x, &y, &w, &h);
 		if (spnum != csp) continue;
-		fx = FixedPoint::make(x << 8);
-		fy = FixedPoint::make(y << 8);
-		fw = FixedPoint::make(w << 8);
-		fh = FixedPoint::make(h << 8);
+		fx = ((double)x / 256.0);
+		fy = ((double)y / 256.0);
+		fw = ((double)w / 256.0);
+		fh = ((double)h / 256.0);
 		wl[cn].x1 = (int)((fx / pagew) * dcw);
 		wl[cn].y1 = (int)(dcy + ((pagey - (fy + fh)) / pageh) * dch);
 		wl[cn].x2 = (int)(((fx + fw) / pagew) * dcw);

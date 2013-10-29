@@ -128,15 +128,18 @@ class MySplashOutputDev: public SplashOutputDev
 		{
 			if (! reflow) SplashOutputDev::eoFill(state);
 		}
-		virtual void tilingPatternFill(GfxState* state, Object* str,
-									   int paintType, Dict* resDict,
-									   FixedPoint* mat, FixedPoint* bbox,
-									   int x0, int y0, int x1, int y1,
-									   FixedPoint xStep, FixedPoint yStep)
+		virtual GBool tilingPatternFill(GfxState * state, Gfx * gfx, Catalog * cat,
+					Object * str, double *pmat, int paintType,
+					int tilingType, Dict * resDict, double *mat,
+					double *bbox, int x0, int y0, int x1,
+					int y1, double xStep, double yStep)
 		{
-
-			if (! reflow) SplashOutputDev::tilingPatternFill(state, str, paintType,
-					resDict, mat, bbox, x0, y0, x1, y1, xStep, yStep);
+			if (!reflow)
+				return SplashOutputDev::tilingPatternFill(state, gfx, cat, str,
+						pmat, paintType, tilingType,
+						resDict, mat, bbox, x0, y0,
+						x1, y1, xStep, yStep);
+			return gTrue;
 		}
 		virtual void clip(GfxState* state)
 		{
@@ -162,33 +165,35 @@ class MySplashOutputDev: public SplashOutputDev
 		}
 
 		void setup(GBool usereflow, int sp, int dispx, int dispy, int dispw, int disph,
-				   FixedPoint x, FixedPoint y, FixedPoint w, FixedPoint h, FixedPoint res);
+				   double x, double y, double w, double h, double res);
 
-		virtual void drawChar(GfxState* state, FixedPoint x, FixedPoint y,
-							  FixedPoint dx, FixedPoint dy,
-							  FixedPoint originX, FixedPoint originY,
-							  CharCode code, int nBytes, Unicode* u, int uLen);
+		virtual void drawChar(GfxState* state,
+					double x, double y,
+					double dx, double dy,
+					double originX, double originY,
+					CharCode code, int nBytes, Unicode* u, int uLen);
 
 		virtual void drawImageMask(GfxState* state, Object* ref, Stream* str,
-								   int width, int height, GBool invert,
-								   GBool inlineImg);
+				int width, int height, GBool invert,
+				GBool interpolate, GBool inlineImg);
 
 		virtual void drawImage(GfxState* state, Object* ref, Stream* str,
-							   int width, int height, GfxImageColorMap* colorMap,
-							   int* maskColors, GBool inlineImg);
+				int width, int height, GfxImageColorMap* colorMap,
+				GBool interpolate, int *maskColors, GBool inlineImg);
 
 		virtual void drawMaskedImage(GfxState* state, Object* ref, Stream* str,
-									 int width, int height,
-									 GfxImageColorMap* colorMap,
-									 Stream* maskStr, int maskWidth, int maskHeight,
-									 GBool maskInvert);
+			       int width, int height,
+			       GfxImageColorMap* colorMap, GBool interpolate, Stream * maskStr,
+			       int maskWidth, int maskHeight,
+			       GBool maskInvert, GBool maskInterpolate);
 
 		virtual void drawSoftMaskedImage(GfxState* state, Object* ref, Stream* str,
-										 int width, int height,
-										 GfxImageColorMap* colorMap,
-										 Stream* maskStr,
-										 int maskWidth, int maskHeight,
-										 GfxImageColorMap* maskColorMap);
+				int width, int height,
+				GfxImageColorMap* colorMap,
+				GBool interpolate, Stream* maskStr,
+				int maskWidth, int maskHeight,
+				GfxImageColorMap* maskColorMap,
+				GBool maskInterpolate);
 
 
 		int subpageCount()
@@ -197,8 +202,8 @@ class MySplashOutputDev: public SplashOutputDev
 		}
 
 
-		GBool beginType3Char(GfxState* state, FixedPoint x, FixedPoint y,
-							 FixedPoint dx, FixedPoint dy,
+		GBool beginType3Char(GfxState* state, double x, double y,
+							 double dx, double dy,
 							 CharCode code, Unicode* u, int uLen)
 		{
 			if (reflow) return false;
@@ -221,14 +226,14 @@ class MySplashOutputDev: public SplashOutputDev
 
 	private:
 
-		void add_image(FixedPoint* m);
-		int get_image(FixedPoint* m);
+		void add_image(double* m);
+		int get_image(double* m);
 
 		GBool reflow;
-		FixedPoint ares;
+		double ares;
 		int subpage;
-		FixedPoint dcx, dcy, dcw, dch;
-		FixedPoint pagex, pagey, pagew, pageh;
+		double dcx, dcy, dcw, dch;
+		double pagex, pagey, pagew, pageh;
 
 };
 

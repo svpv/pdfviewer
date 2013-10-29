@@ -50,7 +50,7 @@ void SearchOutputDev::drawString(GfxState* state, GooString* s)
 	CharCode code;
 	char* p;
 	Unicode* u = NULL;
-	FixedPoint dx, dy, originX, originY, tOriginX, tOriginY;
+	double dx, dy, originX, originY, tOriginX, tOriginY;
 	int clen, len, n, uLen;
 	int i;
 

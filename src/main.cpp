@@ -120,7 +120,7 @@ int get_page_word_list(iv_wlist** word_list, int* wlist_len, int page)
 		}
 		else
 		{
-			FixedPoint fx1, fx2, fy1, fy2;
+			double fx1, fx2, fy1, fy2;
 			int x1, x2, y1, y2;
 			char* s;
 			int i, sw, sh, pw, ph, marginx, marginy, len;
@@ -129,7 +129,7 @@ int get_page_word_list(iv_wlist** word_list, int* wlist_len, int page)
 			sw = ScreenWidth();
 			sh = ScreenHeight();
 
-			textout = new TextOutputDev(NULL, gFalse, gFalse, gFalse);
+			textout = new TextOutputDev(NULL, gFalse, 0.0, gFalse, gFalse);
 			getpagesize(page != -1 ? page : cpage, &pw, &ph, &sres, &marginx, &marginy);
 			doc->displayPage(textout, page != -1 ? page : cpage, sres, sres, 0, false, true, false);
 			TextWordList* wlist = textout->makeWordList();
@@ -180,7 +180,7 @@ int get_page_word_list(iv_wlist** word_list, int* wlist_len, int page)
 
 static void search_timer()
 {
-	FixedPoint xMin = 0, yMin = 0, xMax = 9999999, yMax = 9999999;
+	double xMin = 0, yMin = 0, xMax = 9999999, yMax = 9999999;
 	unsigned int ucs4[32];
 	unsigned int ucs4_len;
 	int i, pw, ph, marginx, marginy;
@@ -226,7 +226,7 @@ static void search_timer()
 
 	nresults = 0;
 	while (textPage->findText(ucs4, ucs4_len,
-							  gFalse, gTrue, gTrue, gFalse, gFalse, gFalse, &xMin, &yMin, &xMax, &yMax))
+            gFalse, gTrue, gTrue, gFalse, gFalse, gFalse, gFalse, &xMin, &yMin, &xMax, &yMax))
 	{
 		i = nresults++;
 		results[i].x = (int)xMin - 2;
@@ -247,7 +247,7 @@ static void search_timer()
 		SetHardTimer("SEARCH", search_timer, 1);
 	}
 
-	delete textPage;
+	textPage->decRefCnt();
 }
 
 
@@ -349,7 +349,7 @@ void search_enter(char* text)
 	savereflow = reflow_mode;
 	scale = 105;
 	reflow_mode = 0;
-	textout = new TextOutputDev(NULL, gFalse, gFalse, gFalse);
+	textout = new TextOutputDev(NULL, gFalse, 0.0, gFalse, gFalse);
 	searchout = new SearchOutputDev(text);
 	if (! textout->isOk())
 	{
@@ -1257,8 +1257,12 @@ int main(int argc, char** argv)
 	paperColor[0] = 255;
 	paperColor[1] = 255;
 	paperColor[2] = 255;
-	splashOut = new MySplashOutputDev(USE4 ? splashModeMono4 : splashModeMono8, 4, gFalse, paperColor);
-	splashOut->startDoc(doc->getXRef());
+#if USE4
+	splashOut = new MySplashOutputDev(splashModeMono4, 4, gFalse, paperColor);
+#else
+	splashOut = new MySplashOutputDev(splashModeMono8, 4, gFalse, paperColor);
+#endif
+	splashOut->startDoc(doc);
 
 	Outline* outline = doc->getOutline();
 	if (outline && outline->getItems())

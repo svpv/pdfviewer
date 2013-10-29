@@ -103,9 +103,9 @@ class SearchOutputDev: public OutputDev
 		//----- initialization and control
 
 		// Set default transform matrix.
-		void setDefaultCTM(FixedPoint* ctm) { }
+		void setDefaultCTM(double* ctm) { }
 
-		GBool checkPageSlice(Page* page, FixedPoint hDPI, FixedPoint vDPI,
+		GBool checkPageSlice(Page* page, double hDPI, double vDPI,
 							 int rotate, GBool useMediaBox, GBool crop,
 							 int sliceX, int sliceY, int sliceW, int sliceH,
 							 GBool printing, Catalog* catalog,
@@ -136,14 +136,14 @@ class SearchOutputDev: public OutputDev
 		//----- coordinate conversion
 
 		// Convert between device and user coordinates.
-		void cvtDevToUser(FixedPoint dx, FixedPoint dy, FixedPoint* ux, FixedPoint* uy) { }
-		void cvtUserToDev(FixedPoint ux, FixedPoint uy, int* dx, int* dy) { }
+		void cvtDevToUser(double dx, double dy, double* ux, double* uy) { }
+		void cvtUserToDev(double ux, double uy, int* dx, int* dy) { }
 
-		FixedPoint* getDefCTM()
+		double* getDefCTM()
 		{
 			return defCTM;
 		}
-		FixedPoint* getDefICTM()
+		double* getDefICTM()
 		{
 			return defICTM;
 		}
@@ -175,9 +175,9 @@ class SearchOutputDev: public OutputDev
 			//  fprintf(stderr, "[ES]");
 
 		}
-		void drawChar(GfxState* state, FixedPoint x, FixedPoint y,
-					  FixedPoint dx, FixedPoint dy,
-					  FixedPoint originX, FixedPoint originY,
+		void drawChar(GfxState* state, double x, double y,
+					  double dx, double dy,
+					  double originX, double originY,
 					  CharCode code, int nBytes, Unicode* u, int uLen)
 		{
 
@@ -225,8 +225,8 @@ class SearchOutputDev: public OutputDev
 
 
 
-		FixedPoint defCTM[6];   // default coordinate transform matrix
-		FixedPoint defICTM[6];    // inverse of default CTM
+		double defCTM[6];   // default coordinate transform matrix
+		double defICTM[6];    // inverse of default CTM
 
 		unsigned short utext[32];
 		unsigned short buffer[4096];

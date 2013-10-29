@@ -449,7 +449,7 @@ static void draw_page_image()
 {
 
 	int sw, sh, pw, ph, x, y, w, h, dx, row, orn, i, grads;
-	FixedPoint tx, ty, tw, th, cw, mw;
+	double tx, ty, tw, th, cw, mw;
 	int marginx, marginy;
 	double res;
 	unsigned char* data;
@@ -514,7 +514,7 @@ static void draw_page_image()
 		y = 0;
 		tw = (doc->getPageMediaWidth(cpage) / pw) * w;
 		tx = tw / 34.0;
-		th = (FixedPoint)((h * 72.0) / res);
+		th = ((h * 72.0) / res);
 		ty = doc->getPageMediaHeight(cpage);
 		//fprintf(stderr, "pw=%i ph=%i cw=%i mw=%i tx=%i ty=%i tw=%i th=%i\n", (int)pw, (int)ph, (int)cw, (int)mw, (int)tx, (int)ty, (int)tw, (int)th);
 

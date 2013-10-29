@@ -32,7 +32,6 @@
 #include "goo/GooString.h"
 #include "goo/GooList.h"
 #include "goo/GooHash.h"
-#include "goo/FixedPoint.h"
 #include "GlobalParams.h"
 #include "Object.h"
 #include "Stream.h"
@@ -50,7 +49,7 @@
 #include "MySplashOutputDev.h"
 #include "SearchOutputDev.h"
 
-#define USE4 1
+#define USE4 0
 
 #define MAXRESULTS 200
 #define CSCALEADJUST 95
