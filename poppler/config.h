@@ -159,10 +159,10 @@
 #define LT_OBJDIR ".libs/"
 
 /* Enable multithreading support. */
-#define MULTITHREADED 1
+/* #undef MULTITHREADED */
 
 /* Generate OPI comments in PS output. */
-#define OPI_SUPPORT 1
+/* #undef OPI_SUPPORT */
 
 /* Name of package */
 #define PACKAGE "poppler"

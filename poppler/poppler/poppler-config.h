@@ -22,7 +22,7 @@
 
 /* Enable multithreading support. */
 #ifndef MULTITHREADED
-#define MULTITHREADED 1
+/* #undef MULTITHREADED */
 #endif
 
 /* Use fixedpoint. */
@@ -37,7 +37,7 @@
 
 /* Include support for OPI comments. */
 #ifndef OPI_SUPPORT
-#define OPI_SUPPORT 1
+/* #undef OPI_SUPPORT */
 #endif
 
 /* Enable word list support. */
