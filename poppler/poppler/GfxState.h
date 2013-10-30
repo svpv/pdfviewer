@@ -1362,7 +1362,8 @@ public:
   GfxColor *getFillColor() { return &fillColor; }
   GfxColor *getStrokeColor() { return &strokeColor; }
   void getFillGray(GfxGray *gray)
-    { fillColorSpace->getGray(&fillColor, gray); }
+    { fillColorSpace->getGray(&fillColor, gray);
+      if (*gray < gfxColorComp1 / 7) *gray = 0; }
   void getStrokeGray(GfxGray *gray)
     { strokeColorSpace->getGray(&strokeColor, gray); }
   void getFillRGB(GfxRGB *rgb)
