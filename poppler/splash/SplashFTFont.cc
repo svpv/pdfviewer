@@ -308,6 +308,9 @@ GBool SplashFTFont::makeGlyph(int c, int xFrac, int yFrac,
     return gTrue;
   }
 
+  if (slot->format == FT_GLYPH_FORMAT_OUTLINE)
+    FT_Outline_Embolden(&slot->outline, 50);
+
   if (FT_Render_Glyph(slot, aa ? ft_render_mode_normal
 		               : ft_render_mode_mono)) {
     return gFalse;
