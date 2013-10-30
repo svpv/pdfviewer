@@ -125,14 +125,14 @@ int get_page_word_list(iv_wlist** word_list, int* wlist_len, int page)
 			double fx1, fx2, fy1, fy2;
 			int x1, x2, y1, y2;
 			char* s;
-			int i, sw, sh, pw, ph, marginx, marginy, len;
+			int i, sw, sh, pw, ph, len;
 			double sres;
 
 			sw = ScreenWidth();
 			sh = ScreenHeight();
 
 			textout = new TextOutputDev(NULL, gFalse, 0.0, gFalse, gFalse);
-			getpagesize(page != -1 ? page : cpage, &pw, &ph, &sres, &marginx, &marginy);
+			get_page_size(page != -1 ? page : cpage, &pw, &ph, &sres);
 			doc->displayPage(textout, page != -1 ? page : cpage, sres, sres, 0, false, true, false);
 			TextWordList* wlist = textout->makeWordList();
 			if (wlist == NULL)
@@ -185,7 +185,7 @@ static void search_timer()
 	double xMin = 0, yMin = 0, xMax = 9999999, yMax = 9999999;
 	unsigned int ucs4[32];
 	unsigned int ucs4_len;
-	int i, pw, ph, marginx, marginy;
+	int i, pw, ph;
 	double sres;
 
 	if (stext == NULL || ! search_mode) return;
@@ -199,7 +199,7 @@ static void search_timer()
 		return;
 	}
 
-	getpagesize(spage, &pw, &ph, &sres, &marginx, &marginy);
+	get_page_size(spage, &pw, &ph, &sres);
 
 	/*
 	  void displayPage(OutputDev *out, int page,

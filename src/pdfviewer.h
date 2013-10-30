@@ -120,7 +120,7 @@ static inline int is_portrait()
 	return (orient == 0 || orient == 3);
 }
 
-void getpagesize(int n, int* w, int* h, double* res, int* marginx, int* marginy);
+void get_page_size(int n, int* w, int* h, double* res);
 void find_off(int step);
 void find_off_x(int step);
 void find_off_xy(int xstep, int ystep);

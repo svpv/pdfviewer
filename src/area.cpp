@@ -132,14 +132,14 @@ static int area_handler(int type, int par1, int par2)
 void area_selector()
 {
 
-	int marginx, marginy, row;
+	int row;
 	double res;
 	unsigned char* data;
 
 	sw = ScreenWidth();
 	sh = ScreenHeight() - panelh;
 
-	getpagesize(cpage, &pw, &ph, &res, &marginx, &marginy);
+	get_page_size(cpage, &pw, &ph, &res);
 	display_slice(cpage, scale, res, gFalse, 0, 0, pw, ph);
 
 	ascale = scale;

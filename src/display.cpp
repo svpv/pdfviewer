@@ -52,10 +52,9 @@ void draw_wait_thumbnail()
 	thw = thh = 0;
 }
 
-void getpagesize(int n, int* w, int* h, double* res, int* marginx, int* marginy)
+void get_page_size(int n, int* w, int* h, double* res)
 {
-
-	int mx, my, realscale;
+	int realscale;
 	int pw, ph, tmp;
 
 	if (reflow_mode)
@@ -76,7 +75,6 @@ void getpagesize(int n, int* w, int* h, double* res, int* marginx, int* marginy)
 		ph = tmp;
 	}
 	int sw = ScreenWidth();
-	int ush = ScreenHeight() - panelh - 15;
 
 	//fprintf(stderr, "(%i,%i) (%i,%i) %i\n", pw, ph, cw, ch, rt);
 	if (reflow_mode)
@@ -90,47 +88,17 @@ void getpagesize(int n, int* w, int* h, double* res, int* marginx, int* marginy)
 	}
 	*w = ((sw * realscale) / 100);
 	*h = (((*w) * ph) / pw);
-	*res = ((((double)realscale * 72.0) / 100.0) * sw) / pw;
-
-	if (scale > 50 && scale < 200)
-	{
-		mx = (*w - sw) / 2;
-		if (mx < 0) mx = 0;
-		if (*h < ush)
-		{
-			my = 0;
-		}
-		else
-		{
-			my = (*h - ush) / 2;
-			if (my > mx * 2) my = mx;
-			if (my < 0) my = 0;
-		}
-	}
-	else
-	{
-		mx = my = 0;
-	}
-
-	n = *h / ush;
-	if (n > 0 && *h - (n * ush) < *h / 10)
-	{
-		my = (*h - (n * ush)) / 2 + 2;
-	}
-
-	*marginx = mx;
-	*marginy = my;
-
+	if (res)
+		*res = realscale * 72.0 / 100.0 * sw / pw;
 }
 
 void find_off(int step)
 {
 	int sw = ScreenWidth();
 	int sh = ScreenHeight();
-	int pw, ph, marginx, marginy;
-	double res;
+	int pw, ph;
 
-	getpagesize(cpage, &pw, &ph, &res, &marginx, &marginy);
+	get_page_size(cpage, &pw, &ph, NULL);
 
 	step = (step * (sh - panelh) * 9) / 10;
 
@@ -141,7 +109,7 @@ void find_off(int step)
 		step = -step;
 		if (offy <= 1)
 		{
-			if (scale < 200 || offx <= marginx)
+			if (scale < 200 || offx <= 0)
 			{
 				if (cpage == 1) return;
 				cpage--;
@@ -163,7 +131,7 @@ void find_off(int step)
 	{
 		if (offy + (sh - panelh) >= ph - 1)
 		{
-			if (scale < 200 || offx >= pw - sw - marginx)
+			if (scale < 200 || offx >= pw - sw)
 			{
 				if (cpage >= npages) return;
 				cpage++;
@@ -187,10 +155,9 @@ void find_off(int step)
 void find_off_x(int step)
 {
 	int sw = ScreenWidth();
-	int pw, ph, marginx, marginy;
-	double res;
+	int pw, ph;
 
-	getpagesize(cpage, &pw, &ph, &res, &marginx, &marginy);
+	get_page_size(cpage, &pw, &ph, NULL);
 
 	step *= (sw / 3);
 
@@ -198,7 +165,7 @@ void find_off_x(int step)
 
 	if (step < 0)
 	{
-		if (scale < 200 || offx <= marginx)
+		if (scale < 200 || offx <= 0)
 		{
 			if (cpage == 1) return;
 			cpage--;
@@ -211,7 +178,7 @@ void find_off_x(int step)
 	}
 	else
 	{
-		if (scale < 200 || offx >= pw - sw - marginx)
+		if (scale < 200 || offx >= pw - sw)
 		{
 			if (cpage >= npages) return;
 			cpage++;
@@ -230,10 +197,9 @@ void find_off_xy(int xstep, int ystep)
 
 	int sw = ScreenWidth();
 	int sh = ScreenHeight();
-	int pw, ph, marginx, marginy;
-	double res;
+	int pw, ph;
 
-	getpagesize(cpage, &pw, &ph, &res, &marginx, &marginy);
+	get_page_size(cpage, &pw, &ph, NULL);
 
 	offx += xstep;
 	if (offx >= pw - sw) offx = pw - sw;
@@ -431,13 +397,13 @@ static int center_image(int sw, int* rw)
 int get_fit_scale()
 {
 
-	int sw, sh, pw, ph, marginx, marginy, rw;
+	int sw, sh, pw, ph, rw;
 	double res;
 
 	scale = 100;
 	sw = ScreenWidth();
 	sh = ScreenHeight();
-	getpagesize(cpage, &pw, &ph, &res, &marginx, &marginy);
+	get_page_size(cpage, &pw, &ph, &res);
 	splashOut->setup(gFalse, 0, 0, 0, sw, sh - panelh, 0, 0, 0, 0, res);
 	display_slice(cpage, scale, res, gFalse, 0, 0, pw, ph);
 	center_image(pw / 2, &rw);
@@ -450,7 +416,6 @@ static void draw_page_image()
 
 	int sw, sh, pw, ph, x, y, w, h, dx, row, orn, i, grads;
 	double tx, ty, tw, th, cw, mw;
-	int marginx, marginy;
 	double res;
 	unsigned char* data;
 
@@ -465,19 +430,16 @@ static void draw_page_image()
 	sw = ScreenWidth();
 	sh = ScreenHeight();
 
-	getpagesize(cpage, &pw, &ph, &res, &marginx, &marginy);
+	get_page_size(cpage, &pw, &ph, &res);
 
 	scrx = scry = dx = 0;
 
 	if (! after_hand_move)
 	{
-		if (pw - sw - marginx < offx) offx = pw - sw - marginx;
-		if (offx < marginx) offx = marginx;
-		//if (offy < marginy) offy = marginy;
-		//if (ph-(sh-panelh-15)-marginy < offy) offy = ph-(sh-panelh-15)-marginy;
+		if (pw - sw < offx) offx = pw - sw;
+		if (offx < 0) offx = 0;
 		if (ph - (sh - panelh) < offy) offy = ph - (sh - panelh);
-		if (offy < 0) offy = 1;
-		if (offy == 0) offy = marginy;
+		if (offy < 0) offy = 0;
 	}
 
 	if (! reflow_mode)
@@ -583,7 +545,7 @@ static void draw_page_image()
 static int draw_pages()
 {
 
-	int sw, sh, pw, ph, nx, ny, boxx, boxy, boxw, boxh, xx, yy, n, row, marginx, marginy, w, h;
+	int sw, sh, pw, ph, nx, ny, boxx, boxy, boxw, boxh, xx, yy, n, row, w, h;
 	double res;
 	unsigned char* data;
 	pid_t pid;
@@ -648,7 +610,7 @@ static int draw_pages()
 				if (n > npages) break;
 				boxx = xx * boxw;
 				boxy = yy * boxh;
-				getpagesize(n, &pw, &ph, &res, &marginx, &marginy);
+				get_page_size(n, &pw, &ph, &res);
 				splashOut->setup(gFalse, 0, 0, 0, boxw - 10, boxh - 10, 0, 0, 0, 0, res);
 				display_slice(n, scale, res, gFalse, 5, (scale == 33 && !is_portrait()) ? 15 : 5, boxw - 10, boxh - 10);
 				//doc->displayPageSlice(splashOut, n, res, res, 0, gFalse, gTrue/*gFalse*/, gFalse,
