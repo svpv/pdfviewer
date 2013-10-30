@@ -6,6 +6,25 @@
 //
 //========================================================================
 
+//========================================================================
+//
+// Modified under the Poppler project - http://poppler.freedesktop.org
+//
+// All changes made under the Poppler project to this file are licensed
+// under GPL version 2 or later
+//
+// Copyright (C) 2005 Jonathan Blandford <jrb@redhat.com>
+// Copyright (C) 2006 Thorkild Stray <thorkild@ifi.uio.no>
+// Copyright (C) 2007 Adrian Johnson <ajohnson@redneon.com>
+// Copyright (C) 2009 Carlos Garcia Campos <carlosgc@gnome.org>
+// Copyright (C) 2009, 2012, 2013 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2012 Thomas Freitag <Thomas.Freitag@alfa.de>
+//
+// To see a description of the changes please see the Changelog file that
+// came with your tarball or type make ChangeLog if you are building from git
+//
+//========================================================================
+
 #include <config.h>
 
 #ifdef USE_GCC_PRAGMAS
@@ -23,14 +42,14 @@
 // OutputDev
 //------------------------------------------------------------------------
 
-void OutputDev::setDefaultCTM(FixedPoint *ctm) {
+void OutputDev::setDefaultCTM(double *ctm) {
   int i;
-  FixedPoint det;
+  double det;
 
   for (i = 0; i < 6; ++i) {
     defCTM[i] = ctm[i];
   }
-  det = (FixedPoint)1 / (defCTM[0] * defCTM[3] - defCTM[1] * defCTM[2]);
+  det = 1 / (defCTM[0] * defCTM[3] - defCTM[1] * defCTM[2]);
   defICTM[0] = defCTM[3] * det;
   defICTM[1] = -defCTM[1] * det;
   defICTM[2] = -defCTM[2] * det;
@@ -39,12 +58,12 @@ void OutputDev::setDefaultCTM(FixedPoint *ctm) {
   defICTM[5] = (defCTM[1] * defCTM[4] - defCTM[0] * defCTM[5]) * det;
 }
 
-void OutputDev::cvtDevToUser(FixedPoint dx, FixedPoint dy, FixedPoint *ux, FixedPoint *uy) {
+void OutputDev::cvtDevToUser(double dx, double dy, double *ux, double *uy) {
   *ux = defICTM[0] * dx + defICTM[2] * dy + defICTM[4];
   *uy = defICTM[1] * dx + defICTM[3] * dy + defICTM[5];
 }
 
-void OutputDev::cvtUserToDev(FixedPoint ux, FixedPoint uy, int *dx, int *dy) {
+void OutputDev::cvtUserToDev(double ux, double uy, int *dx, int *dy) {
   *dx = (int)(defCTM[0] * ux + defCTM[2] * uy + defCTM[4] + 0.5);
   *dy = (int)(defCTM[1] * ux + defCTM[3] * uy + defCTM[5] + 0.5);
 }
@@ -70,15 +89,15 @@ void OutputDev::updateAll(GfxState *state) {
   updateFont(state);
 }
 
-GBool OutputDev::beginType3Char(GfxState *state, FixedPoint x, FixedPoint y,
-				FixedPoint dx, FixedPoint dy,
+GBool OutputDev::beginType3Char(GfxState *state, double x, double y,
+				double dx, double dy,
 				CharCode code, Unicode *u, int uLen) {
   return gFalse;
 }
 
 void OutputDev::drawImageMask(GfxState *state, Object *ref, Stream *str,
 			      int width, int height, GBool invert,
-			      GBool inlineImg) {
+			      GBool interpolate, GBool inlineImg) {
   int i, j;
 
   if (inlineImg) {
@@ -90,9 +109,20 @@ void OutputDev::drawImageMask(GfxState *state, Object *ref, Stream *str,
   }
 }
 
+void OutputDev::setSoftMaskFromImageMask(GfxState *state,
+					 Object *ref, Stream *str,
+					 int width, int height, GBool invert,
+					 GBool inlineImg, double *baseMatrix) {
+  drawImageMask(state, ref, str, width, height, invert, gFalse, inlineImg);
+}
+
+void OutputDev::unsetSoftMaskFromImageMask(GfxState *state, double *baseMatrix) {
+  return;
+}
+
 void OutputDev::drawImage(GfxState *state, Object *ref, Stream *str,
 			  int width, int height, GfxImageColorMap *colorMap,
-			  int *maskColors, GBool inlineImg) {
+			  GBool interpolate, int *maskColors, GBool inlineImg) {
   int i, j;
 
   if (inlineImg) {
@@ -108,25 +138,26 @@ void OutputDev::drawImage(GfxState *state, Object *ref, Stream *str,
 void OutputDev::drawMaskedImage(GfxState *state, Object *ref, Stream *str,
 				int width, int height,
 				GfxImageColorMap *colorMap,
+				GBool interpolate,
 				Stream *maskStr,
 				int maskWidth, int maskHeight,
-				GBool maskInvert) {
-  drawImage(state, ref, str, width, height, colorMap, NULL, gFalse);
+				GBool maskInvert,
+				GBool maskInterpolate) {
+  drawImage(state, ref, str, width, height, colorMap, interpolate, NULL, gFalse);
 }
 
 void OutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str,
 				    int width, int height,
 				    GfxImageColorMap *colorMap,
+				    GBool interpolate,
 				    Stream *maskStr,
 				    int maskWidth, int maskHeight,
-				    GfxImageColorMap *maskColorMap) {
-  drawImage(state, ref, str, width, height, colorMap, NULL, gFalse);
+				    GfxImageColorMap *maskColorMap,
+				    GBool maskInterpolate) {
+  drawImage(state, ref, str, width, height, colorMap, interpolate, NULL, gFalse);
 }
 
 void OutputDev::endMarkedContent(GfxState *state) {
-}
-
-void OutputDev::beginMarkedContent(char *name) {
 }
 
 void OutputDev::beginMarkedContent(char *name, Dict *properties) {
@@ -153,7 +184,7 @@ void OutputDev::startProfile() {
 
   profileHash = new GooHash (true);
 }
- 
+
 GooHash *OutputDev::endProfile() {
   GooHash *profile = profileHash;
 
@@ -162,3 +193,9 @@ GooHash *OutputDev::endProfile() {
   return profile;
 }
 
+#ifdef USE_CMS
+PopplerCache *OutputDev::getIccColorSpaceCache()
+{
+  return &iccColorSpaceCache;
+}
+#endif

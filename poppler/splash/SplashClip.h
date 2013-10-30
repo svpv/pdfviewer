@@ -4,6 +4,21 @@
 //
 //========================================================================
 
+//========================================================================
+//
+// Modified under the Poppler project - http://poppler.freedesktop.org
+//
+// All changes made under the Poppler project to this file are licensed
+// under GPL version 2 or later
+//
+// Copyright (C) 2010 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2013 Thomas Freitag <Thomas.Freitag@alfa.de>
+//
+// To see a description of the changes please see the Changelog file that
+// came with your tarball or type make ChangeLog if you are building from git
+//
+//========================================================================
+
 #ifndef SPLASHCLIP_H
 #define SPLASHCLIP_H
 
@@ -13,10 +28,10 @@
 
 #include "SplashTypes.h"
 #include "SplashMath.h"
+#include "SplashXPathScanner.h"
 
 class SplashPath;
 class SplashXPath;
-class SplashXPathScanner;
 class SplashBitmap;
 
 //------------------------------------------------------------------------
@@ -57,7 +72,32 @@ public:
 			 SplashCoord flatness, GBool eo);
 
   // Returns true if (<x>,<y>) is inside the clip.
-  GBool test(int x, int y);
+  GBool test(int x, int y)
+  {
+    int i;
+
+    // check the rectangle
+    if (x < xMinI || x > xMaxI || y < yMinI || y > yMaxI) {
+      return gFalse;
+    }
+
+    // check the paths
+    if (antialias) {
+      for (i = 0; i < length; ++i) {
+        if (!scanners[i]->test(x * splashAASize, y * splashAASize)) {
+	  return gFalse;
+        }
+      }
+    } else {
+      for (i = 0; i < length; ++i) {
+        if (!scanners[i]->test(x, y)) {
+	  return gFalse;
+        }
+      }
+    }
+
+    return gTrue;
+  }
 
   // Tests a rectangle against the clipping region.  Returns one of:
   //   - splashClipAllInside if the entire rectangle is inside the
@@ -77,7 +117,14 @@ public:
   // Clips an anti-aliased line by setting pixels to zero.  On entry,
   // all non-zero pixels are between <x0> and <x1>.  This function
   // will update <x0> and <x1>.
-  void clipAALine(SplashBitmap *aaBuf, int *x0, int *x1, int y);
+  void clipAALine(SplashBitmap *aaBuf, int *x0, int *x1, int y,
+    GBool adjustVertLine = gFalse);
+
+  // Get the rectangle part of the clip region.
+  SplashCoord getXMin() { return xMin; }
+  SplashCoord getXMax() { return xMax; }
+  SplashCoord getYMin() { return yMin; }
+  SplashCoord getYMax() { return yMax; }
 
   // Get the rectangle part of the clip region, in integer coordinates.
   int getXMinI() { return xMinI; }
@@ -88,7 +135,7 @@ public:
   // Get the number of arbitrary paths used by the clip region.
   int getNumPaths() { return length; }
 
-private:
+protected:
 
   SplashClip(SplashClip *clip);
   void grow(int nPaths);

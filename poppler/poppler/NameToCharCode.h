@@ -26,7 +26,7 @@ public:
   ~NameToCharCode();
 
   void add(const char *name, CharCode c);
-  CharCode lookup(char *name);
+  CharCode lookup(const char *name);
 
 private:
 

@@ -4,6 +4,20 @@
 //
 //========================================================================
 
+//========================================================================
+//
+// Modified under the Poppler project - http://poppler.freedesktop.org
+//
+// All changes made under the Poppler project to this file are licensed
+// under GPL version 2 or later
+//
+// Copyright (C) 2007-2008 Albert Astals Cid <aacid@kde.org>
+//
+// To see a description of the changes please see the Changelog file that
+// came with your tarball or type make ChangeLog if you are building from git
+//
+//========================================================================
+
 #ifndef SPLASHFONT_H
 #define SPLASHFONT_H
 
@@ -86,8 +100,6 @@ public:
   void getBBox(int *xMinA, int *yMinA, int *xMaxA, int *yMaxA)
     { *xMinA = xMin; *yMinA = yMin; *xMaxA = xMax; *yMaxA = yMax; }
 
-  SplashCoord getSize() { return size; }
-
 protected:
 
   SplashFontFile *fontFile;
@@ -104,7 +116,6 @@ protected:
   int glyphSize;		// size of glyph bitmaps, in bytes
   int cacheSets;		// number of sets in cache
   int cacheAssoc;		// cache associativity (glyphs per set)
-  SplashCoord size;
 };
 
 #endif

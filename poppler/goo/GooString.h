@@ -8,6 +8,23 @@
 //
 //========================================================================
 
+//========================================================================
+//
+// Modified under the Poppler project - http://poppler.freedesktop.org
+//
+// All changes made under the Poppler project to this file are licensed
+// under GPL version 2 or later
+//
+// Copyright (C) 2006 Kristian Høgsberg <krh@redhat.com>
+// Copyright (C) 2006 Krzysztof Kowalczyk <kkowalczyk@gmail.com>
+// Copyright (C) 2008-2010, 2012 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2012 Fabio D'Urso <fabiodurso@hotmail.it>
+//
+// To see a description of the changes please see the Changelog file that
+// came with your tarball or type make ChangeLog if you are building from git
+//
+//========================================================================
+
 #ifndef GooString_H
 #define GooString_H
 
@@ -15,6 +32,7 @@
 #pragma interface
 #endif
 
+#include <limits.h> // for LLONG_MAX and ULLONG_MAX
 #include <stdarg.h>
 #include <stdlib.h> // for NULL
 #include "gtypes.h"
@@ -26,7 +44,7 @@ public:
   GooString();
 
   // Create a string from a C string.
-  GooString(const char *sA);
+  explicit GooString(const char *sA);
 
   // Create a string from <lengthA> chars at <sA>.  This string
   // can contain null characters.
@@ -42,8 +60,8 @@ public:
   GooString* Set(const char *s1, int s1Len=CALC_STRING_LEN, const char *s2=NULL, int s2Len=CALC_STRING_LEN);
 
   // Copy a string.
-  GooString(GooString *str);
-  GooString *copy() { return new GooString(this); }
+  explicit GooString(const GooString *str);
+  GooString *copy() const { return new GooString(this); }
 
   // Concatenate two strings.
   GooString(GooString *str1, GooString *str2);
@@ -63,9 +81,11 @@ public:
   // - <precision> is the number of digits to the right of the decimal
   //   point (for floating point numbers)
   // - <type> is one of:
-  //     d, x, o, b -- int in decimal, hex, octal, binary
-  //     ud, ux, uo, ub -- unsigned int
-  //     ld, lx, lo, lb, uld, ulx, ulo, ulb -- long, unsigned long
+  //     d, x, X, o, b -- int in decimal, lowercase hex, uppercase hex, octal, binary
+  //     ud, ux, uX, uo, ub -- unsigned int
+  //     ld, lx, lX, lo, lb, uld, ulx, ulX, ulo, ulb -- long, unsigned long
+  //     lld, llx, llX, llo, llb, ulld, ullx, ullX, ullo, ullb
+  //         -- long long, unsigned long long
   //     f, g -- double
   //     c -- char
   //     s -- string (char *)
@@ -82,7 +102,7 @@ public:
   int getLength() { return length; }
 
   // Get C string.
-  char *getCString() { return s; }
+  char *getCString() const { return s; }
 
   // Get <i>th character.
   char getChar(int i) { return s[i]; }
@@ -115,14 +135,23 @@ public:
   GooString *lowerCase();
 
   // Compare two strings:  -1:<  0:=  +1:>
-  int cmp(GooString *str);
-  int cmpN(GooString *str, int n);
-  int cmp(const char *sA);
-  int cmpN(const char *sA, int n);
+  int cmp(GooString *str) const;
+  int cmpN(GooString *str, int n) const;
+  int cmp(const char *sA) const;
+  int cmpN(const char *sA, int n) const;
 
   GBool hasUnicodeMarker(void);
 
+  // Sanitizes the string so that it does
+  // not contain any ( ) < > [ ] { } / %
+  // The postscript mode also has some more strict checks
+  // The caller owns the return value
+  GooString *sanitizedName(GBool psmode);
+
 private:
+  GooString(const GooString &other);
+  GooString& operator=(const GooString &other);
+
   // you can tweak this number for a different speed/memory usage tradeoffs.
   // In libc malloc() rounding is 16 so it's best to choose a value that
   // results in sizeof(GooString) be a multiple of 16.
@@ -139,14 +168,28 @@ private:
   char *s;
 
   void resize(int newLength);
+#ifdef LLONG_MAX
+  static void formatInt(long long x, char *buf, int bufSize,
+			GBool zeroFill, int width, int base,
+			char **p, int *len, GBool upperCase = gFalse);
+#else
   static void formatInt(long x, char *buf, int bufSize,
 			GBool zeroFill, int width, int base,
-			char **p, int *len);
+			char **p, int *len, GBool upperCase = gFalse);
+#endif
+#ifdef ULLONG_MAX
+  static void formatUInt(unsigned long long x, char *buf, int bufSize,
+			 GBool zeroFill, int width, int base,
+			 char **p, int *len, GBool upperCase = gFalse);
+#else
   static void formatUInt(Gulong x, char *buf, int bufSize,
 			 GBool zeroFill, int width, int base,
-			 char **p, int *len);
+			 char **p, int *len, GBool upperCase = gFalse);
+#endif
   static void formatDouble(double x, char *buf, int bufSize, int prec,
 			   GBool trim, char **p, int *len);
+  static void formatDoubleSmallAware(double x, char *buf, int bufSize, int prec,
+				     GBool trim, char **p, int *len);
 };
 
 #endif

@@ -6,6 +6,28 @@
 //
 //========================================================================
 
+//========================================================================
+//
+// Modified under the Poppler project - http://poppler.freedesktop.org
+//
+// All changes made under the Poppler project to this file are licensed
+// under GPL version 2 or later
+//
+// Copyright (C) 2005 Kristian Høgsberg <krh@redhat.com>
+// Copyright (C) 2006, 2007 Jeff Muizelaar <jeff@infidigm.net>
+// Copyright (C) 2006 Carlos Garcia Campos <carlosgc@gnome.org>
+// Copyright (C) 2009 Koji Otani <sho@bbr.jp>
+// Copyright (C) 2009-2011, 2013 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2010 Christian Feuersänger <cfeuersaenger@googlemail.com>
+// Copyright (C) 2011 Andrea Canciani <ranma42@gmail.com>
+// Copyright (C) 2011, 2012 Thomas Freitag <Thomas.Freitag@alfa.de>
+// Copyright (C) 2013 Lu Wang <coolwanglu@gmail.com>
+//
+// To see a description of the changes please see the Changelog file that
+// came with your tarball or type make ChangeLog if you are building from git
+//
+//========================================================================
+
 #ifndef GFXSTATE_H
 #define GFXSTATE_H
 
@@ -13,22 +35,31 @@
 #pragma interface
 #endif
 
+#include "poppler-config.h"
+
 #include "goo/gtypes.h"
-#include "goo/FixedPoint.h"
 #include "Object.h"
 #include "Function.h"
 
+#include <assert.h>
+
 class Array;
+class Gfx;
 class GfxFont;
 class PDFRectangle;
 class GfxShading;
+class PopplerCache;
+class GooList;
+class OutputDev;
 
 class Matrix {
 public:
-  FixedPoint m[6];
+  double m[6];
 
-  GBool invertTo(Matrix *other);
-  void transform(FixedPoint x, FixedPoint y, FixedPoint *tx, FixedPoint *ty);
+  GBool invertTo(Matrix *other) const;
+  void transform(double x, double y, double *tx, double *ty) const;
+  double determinant() const { return m[0] * m[3] - m[1] * m[2]; }
+  double norm() const;
 };
 
 //------------------------------------------------------------------------
@@ -67,13 +98,16 @@ static inline GfxColorComp dblToCol(double x) {
   return (GfxColorComp)(x * gfxColorComp1);
 }
 
-static inline GfxColorComp fpToCol(FixedPoint x) {
-//  return (GfxColorComp)(x * (FixedPoint)gfxColorComp1);
-  return x.getRaw();
-}
-
 static inline double colToDbl(GfxColorComp x) {
   return (double)x / (double)gfxColorComp1;
+}
+
+static inline Guchar dblToByte(double x) {
+  return (x * 255.0);
+}
+
+static inline double byteToDbl(Guchar x) {
+  return (double)x / (double)255.0;
 }
 
 static inline GfxColorComp byteToCol(Guchar x) {
@@ -141,6 +175,21 @@ enum GfxColorSpaceMode {
   csPattern
 };
 
+// wrapper of cmsHTRANSFORM to copy
+class GfxColorTransform {
+public:
+  void doTransform(void *in, void *out, unsigned int size);
+  // transformA should be a cmsHTRANSFORM
+  GfxColorTransform(void *transformA);
+  ~GfxColorTransform();
+  void ref();
+  unsigned int unref();
+private:
+  GfxColorTransform() {}
+  void *transform;
+  unsigned int refCount;
+};
+
 class GfxColorSpace {
 public:
 
@@ -150,14 +199,25 @@ public:
   virtual GfxColorSpaceMode getMode() = 0;
 
   // Construct a color space.  Returns NULL if unsuccessful.
-  static GfxColorSpace *parse(Object *csObj);
+  static GfxColorSpace *parse(Object *csObj, OutputDev *out, int recursion = 0);
 
   // Convert to gray, RGB, or CMYK.
   virtual void getGray(GfxColor *color, GfxGray *gray) = 0;
   virtual void getRGB(GfxColor *color, GfxRGB *rgb) = 0;
   virtual void getCMYK(GfxColor *color, GfxCMYK *cmyk) = 0;
-  virtual void getRGBLine(Guchar *in, unsigned int *out, int length);
-  virtual void getGrayLine(Guchar *in, Guchar *out, int length);
+  virtual void getDeviceN(GfxColor *color, GfxColor *deviceN) = 0;
+  virtual void getGrayLine(Guchar * /*in*/, Guchar * /*out*/, int /*length*/) { error(errInternal, -1, "GfxColorSpace::getGrayLine this should not happen"); }
+  virtual void getRGBLine(Guchar * /*in*/, unsigned int * /*out*/, int /*length*/) { error(errInternal, -1, "GfxColorSpace::getRGBLine (first variant) this should not happen"); }
+  virtual void getRGBLine(Guchar * /*in*/, Guchar * /*out*/, int /*length*/) {  error(errInternal, -1, "GfxColorSpace::getRGBLine (second variant) this should not happen"); }
+  virtual void getRGBXLine(Guchar * /*in*/, Guchar * /*out*/, int /*length*/) {  error(errInternal, -1, "GfxColorSpace::getRGBXLine this should not happen"); }
+
+  // create mapping for spot colorants
+  virtual void createMapping(GooList *separationList, int maxSepComps);
+
+  // Does this ColorSpace support getRGBLine?
+  virtual GBool useGetRGBLine() { return gFalse; }
+  // Does this ColorSpace support getGrayLine?
+  virtual GBool useGetGrayLine() { return gFalse; }
 
   // Return the number of color components.
   virtual int getNComps() = 0;
@@ -167,12 +227,15 @@ public:
 
   // Return the default ranges for each component, assuming an image
   // with a max pixel value of <maxImgPixel>.
-  virtual void getDefaultRanges(FixedPoint *decodeLow, FixedPoint *decodeRange,
+  virtual void getDefaultRanges(double *decodeLow, double *decodeRange,
 				int maxImgPixel);
 
   // Returns true if painting operations in this color space never
   // mark the page (e.g., the "None" colorant).
   virtual GBool isNonMarking() { return gFalse; }
+
+  // Return the color space's overprint mask.
+  Guint getOverprintMask() { return overprintMask; }
 
   // Return the number of color space modes
   static int getNumColorSpaceModes();
@@ -180,7 +243,20 @@ public:
   // Return the name of the <idx>th color space mode.
   static const char *getColorSpaceModeName(int idx);
 
-private:
+#ifdef USE_CMS
+  static int setupColorProfiles();
+  // displayProfileA should be a cmsHPROFILE 
+  static void setDisplayProfile(void *displayProfileA);
+  static void setDisplayProfileName(GooString *name);
+  // result will be a cmsHPROFILE 
+  static void *getRGBProfile();
+  // result will be a cmsHPROFILE 
+  static void *getDisplayProfile();
+#endif
+protected:
+
+  Guint overprintMask;
+  int *mapping;
 };
 
 //------------------------------------------------------------------------
@@ -198,8 +274,14 @@ public:
   virtual void getGray(GfxColor *color, GfxGray *gray);
   virtual void getRGB(GfxColor *color, GfxRGB *rgb);
   virtual void getCMYK(GfxColor *color, GfxCMYK *cmyk);
+  virtual void getDeviceN(GfxColor *color, GfxColor *deviceN);
   virtual void getGrayLine(Guchar *in, Guchar *out, int length);
   virtual void getRGBLine(Guchar *in, unsigned int *out, int length);
+  virtual void getRGBLine(Guchar *in, Guchar *out, int length);
+  virtual void getRGBXLine(Guchar *in, Guchar *out, int length);
+
+  virtual GBool useGetRGBLine() { return gTrue; }
+  virtual GBool useGetGrayLine() { return gTrue; }
 
   virtual int getNComps() { return 1; }
   virtual void getDefaultColor(GfxColor *color);
@@ -225,26 +307,27 @@ public:
   virtual void getGray(GfxColor *color, GfxGray *gray);
   virtual void getRGB(GfxColor *color, GfxRGB *rgb);
   virtual void getCMYK(GfxColor *color, GfxCMYK *cmyk);
-  virtual void getGrayLine(Guchar *in, Guchar *out, int length);
-  virtual void getRGBLine(Guchar *in, unsigned int *out, int length);
+  virtual void getDeviceN(GfxColor *color, GfxColor *deviceN);
 
   virtual int getNComps() { return 1; }
   virtual void getDefaultColor(GfxColor *color);
 
   // CalGray-specific access.
-  FixedPoint getWhiteX() { return whiteX; }
-  FixedPoint getWhiteY() { return whiteY; }
-  FixedPoint getWhiteZ() { return whiteZ; }
-  FixedPoint getBlackX() { return blackX; }
-  FixedPoint getBlackY() { return blackY; }
-  FixedPoint getBlackZ() { return blackZ; }
-  FixedPoint getGamma() { return gamma; }
+  double getWhiteX() { return whiteX; }
+  double getWhiteY() { return whiteY; }
+  double getWhiteZ() { return whiteZ; }
+  double getBlackX() { return blackX; }
+  double getBlackY() { return blackY; }
+  double getBlackZ() { return blackZ; }
+  double getGamma() { return gamma; }
 
 private:
 
-  FixedPoint whiteX, whiteY, whiteZ;    // white point
-  FixedPoint blackX, blackY, blackZ;    // black point
-  FixedPoint gamma;			    // gamma value
+  double whiteX, whiteY, whiteZ;    // white point
+  double blackX, blackY, blackZ;    // black point
+  double gamma;			    // gamma value
+  double kr, kg, kb;		    // gamut mapping mulitpliers
+  void getXYZ(GfxColor *color, double *pX, double *pY, double *pZ);
 };
 
 //------------------------------------------------------------------------
@@ -262,8 +345,14 @@ public:
   virtual void getGray(GfxColor *color, GfxGray *gray);
   virtual void getRGB(GfxColor *color, GfxRGB *rgb);
   virtual void getCMYK(GfxColor *color, GfxCMYK *cmyk);
+  virtual void getDeviceN(GfxColor *color, GfxColor *deviceN);
   virtual void getGrayLine(Guchar *in, Guchar *out, int length);
   virtual void getRGBLine(Guchar *in, unsigned int *out, int length);
+  virtual void getRGBLine(Guchar *in, Guchar *out, int length);
+  virtual void getRGBXLine(Guchar *in, Guchar *out, int length);
+
+  virtual GBool useGetRGBLine() { return gTrue; }
+  virtual GBool useGetGrayLine() { return gTrue; }
 
   virtual int getNComps() { return 3; }
   virtual void getDefaultColor(GfxColor *color);
@@ -289,30 +378,31 @@ public:
   virtual void getGray(GfxColor *color, GfxGray *gray);
   virtual void getRGB(GfxColor *color, GfxRGB *rgb);
   virtual void getCMYK(GfxColor *color, GfxCMYK *cmyk);
-  virtual void getGrayLine(Guchar *in, Guchar *out, int length);
-  virtual void getRGBLine(Guchar *in, unsigned int *out, int length);
+  virtual void getDeviceN(GfxColor *color, GfxColor *deviceN);
 
   virtual int getNComps() { return 3; }
   virtual void getDefaultColor(GfxColor *color);
 
   // CalRGB-specific access.
-  FixedPoint getWhiteX() { return whiteX; }
-  FixedPoint getWhiteY() { return whiteY; }
-  FixedPoint getWhiteZ() { return whiteZ; }
-  FixedPoint getBlackX() { return blackX; }
-  FixedPoint getBlackY() { return blackY; }
-  FixedPoint getBlackZ() { return blackZ; }
-  FixedPoint getGammaR() { return gammaR; }
-  FixedPoint getGammaG() { return gammaG; }
-  FixedPoint getGammaB() { return gammaB; }
-  FixedPoint *getMatrix() { return mat; }
+  double getWhiteX() { return whiteX; }
+  double getWhiteY() { return whiteY; }
+  double getWhiteZ() { return whiteZ; }
+  double getBlackX() { return blackX; }
+  double getBlackY() { return blackY; }
+  double getBlackZ() { return blackZ; }
+  double getGammaR() { return gammaR; }
+  double getGammaG() { return gammaG; }
+  double getGammaB() { return gammaB; }
+  double *getMatrix() { return mat; }
 
 private:
 
-  FixedPoint whiteX, whiteY, whiteZ;    // white point
-  FixedPoint blackX, blackY, blackZ;    // black point
-  FixedPoint gammaR, gammaG, gammaB;    // gamma values
-  FixedPoint mat[9];		    // ABC -> XYZ transform matrix
+  double whiteX, whiteY, whiteZ;    // white point
+  double blackX, blackY, blackZ;    // black point
+  double gammaR, gammaG, gammaB;    // gamma values
+  double mat[9];		    // ABC -> XYZ transform matrix
+  double kr, kg, kb;		    // gamut mapping mulitpliers
+  void getXYZ(GfxColor *color, double *pX, double *pY, double *pZ);
 };
 
 //------------------------------------------------------------------------
@@ -330,6 +420,11 @@ public:
   virtual void getGray(GfxColor *color, GfxGray *gray);
   virtual void getRGB(GfxColor *color, GfxRGB *rgb);
   virtual void getCMYK(GfxColor *color, GfxCMYK *cmyk);
+  virtual void getDeviceN(GfxColor *color, GfxColor *deviceN);
+  virtual void getRGBLine(Guchar *in, unsigned int *out, int length);
+  virtual void getRGBLine(Guchar *, Guchar *out, int length);
+  virtual void getRGBXLine(Guchar *in, Guchar *out, int length);
+  virtual GBool useGetRGBLine() { return gTrue; }
 
   virtual int getNComps() { return 4; }
   virtual void getDefaultColor(GfxColor *color);
@@ -355,31 +450,33 @@ public:
   virtual void getGray(GfxColor *color, GfxGray *gray);
   virtual void getRGB(GfxColor *color, GfxRGB *rgb);
   virtual void getCMYK(GfxColor *color, GfxCMYK *cmyk);
+  virtual void getDeviceN(GfxColor *color, GfxColor *deviceN);
 
   virtual int getNComps() { return 3; }
   virtual void getDefaultColor(GfxColor *color);
 
-  virtual void getDefaultRanges(FixedPoint *decodeLow, FixedPoint *decodeRange,
+  virtual void getDefaultRanges(double *decodeLow, double *decodeRange,
 				int maxImgPixel);
 
   // Lab-specific access.
-  FixedPoint getWhiteX() { return whiteX; }
-  FixedPoint getWhiteY() { return whiteY; }
-  FixedPoint getWhiteZ() { return whiteZ; }
-  FixedPoint getBlackX() { return blackX; }
-  FixedPoint getBlackY() { return blackY; }
-  FixedPoint getBlackZ() { return blackZ; }
-  FixedPoint getAMin() { return aMin; }
-  FixedPoint getAMax() { return aMax; }
-  FixedPoint getBMin() { return bMin; }
-  FixedPoint getBMax() { return bMax; }
+  double getWhiteX() { return whiteX; }
+  double getWhiteY() { return whiteY; }
+  double getWhiteZ() { return whiteZ; }
+  double getBlackX() { return blackX; }
+  double getBlackY() { return blackY; }
+  double getBlackZ() { return blackZ; }
+  double getAMin() { return aMin; }
+  double getAMax() { return aMax; }
+  double getBMin() { return bMin; }
+  double getBMax() { return bMax; }
 
 private:
 
-  FixedPoint whiteX, whiteY, whiteZ;    // white point
-  FixedPoint blackX, blackY, blackZ;    // black point
-  FixedPoint aMin, aMax, bMin, bMax;    // range for the a and b components
-  FixedPoint kr, kg, kb;		    // gamut mapping mulitpliers
+  double whiteX, whiteY, whiteZ;    // white point
+  double blackX, blackY, blackZ;    // black point
+  double aMin, aMax, bMin, bMax;    // range for the a and b components
+  double kr, kg, kb;		    // gamut mapping mulitpliers
+  void getXYZ(GfxColor *color, double *pX, double *pY, double *pZ);
 };
 
 //------------------------------------------------------------------------
@@ -396,17 +493,22 @@ public:
   virtual GfxColorSpaceMode getMode() { return csICCBased; }
 
   // Construct an ICCBased color space.  Returns NULL if unsuccessful.
-  static GfxColorSpace *parse(Array *arr);
+  static GfxColorSpace *parse(Array *arr, OutputDev *out, int recursion);
 
   virtual void getGray(GfxColor *color, GfxGray *gray);
   virtual void getRGB(GfxColor *color, GfxRGB *rgb);
   virtual void getCMYK(GfxColor *color, GfxCMYK *cmyk);
-
+  virtual void getDeviceN(GfxColor *color, GfxColor *deviceN);
   virtual void getRGBLine(Guchar *in, unsigned int *out, int length);
+  virtual void getRGBLine(Guchar *in, Guchar *out, int length);
+  virtual void getRGBXLine(Guchar *in, Guchar *out, int length);
+
+  virtual GBool useGetRGBLine();
+
   virtual int getNComps() { return nComps; }
   virtual void getDefaultColor(GfxColor *color);
 
-  virtual void getDefaultRanges(FixedPoint *decodeLow, FixedPoint *decodeRange,
+  virtual void getDefaultRanges(double *decodeLow, double *decodeRange,
 				int maxImgPixel);
 
   // ICCBased-specific access.
@@ -416,11 +518,14 @@ private:
 
   int nComps;			// number of color components (1, 3, or 4)
   GfxColorSpace *alt;		// alternate color space
-  FixedPoint rangeMin[4];		// min values for each component
-  FixedPoint rangeMax[4];		// max values for each component
+  double rangeMin[4];		// min values for each component
+  double rangeMax[4];		// max values for each component
   Ref iccProfileStream;		// the ICC profile
+#ifdef USE_CMS
+  GfxColorTransform *transform;
+  GfxColorTransform *lineTransform; // color transform for line
+#endif
 };
-
 //------------------------------------------------------------------------
 // GfxIndexedColorSpace
 //------------------------------------------------------------------------
@@ -433,18 +538,23 @@ public:
   virtual GfxColorSpace *copy();
   virtual GfxColorSpaceMode getMode() { return csIndexed; }
 
-  // Construct a Lab color space.  Returns NULL if unsuccessful.
-  static GfxColorSpace *parse(Array *arr);
+  // Construct an Indexed color space.  Returns NULL if unsuccessful.
+  static GfxColorSpace *parse(Array *arr, OutputDev *out, int recursion);
 
   virtual void getGray(GfxColor *color, GfxGray *gray);
   virtual void getRGB(GfxColor *color, GfxRGB *rgb);
   virtual void getCMYK(GfxColor *color, GfxCMYK *cmyk);
+  virtual void getDeviceN(GfxColor *color, GfxColor *deviceN);
   virtual void getRGBLine(Guchar *in, unsigned int *out, int length);
+  virtual void getRGBLine(Guchar *in, Guchar *out, int length);
+  virtual void getRGBXLine(Guchar *in, Guchar *out, int length);
+
+  virtual GBool useGetRGBLine() { return gTrue; }
 
   virtual int getNComps() { return 1; }
   virtual void getDefaultColor(GfxColor *color);
 
-  virtual void getDefaultRanges(FixedPoint *decodeLow, FixedPoint *decodeRange,
+  virtual void getDefaultRanges(double *decodeLow, double *decodeRange,
 				int maxImgPixel);
 
   // Indexed-specific access.
@@ -452,6 +562,10 @@ public:
   int getIndexHigh() { return indexHigh; }
   Guchar *getLookup() { return lookup; }
   GfxColor *mapColorToBase(GfxColor *color, GfxColor *baseColor);
+  Guint getOverprintMask() { return base->getOverprintMask(); }
+  virtual void createMapping(GooList *separationList, int maxSepComps)
+    { base->createMapping(separationList, maxSepComps); }
+
 
 private:
 
@@ -474,11 +588,14 @@ public:
   virtual GfxColorSpaceMode getMode() { return csSeparation; }
 
   // Construct a Separation color space.  Returns NULL if unsuccessful.
-  static GfxColorSpace *parse(Array *arr);
+  static GfxColorSpace *parse(Array *arr, OutputDev *out, int recursion);
 
   virtual void getGray(GfxColor *color, GfxGray *gray);
   virtual void getRGB(GfxColor *color, GfxRGB *rgb);
   virtual void getCMYK(GfxColor *color, GfxCMYK *cmyk);
+  virtual void getDeviceN(GfxColor *color, GfxColor *deviceN);
+
+  virtual void createMapping(GooList *separationList, int maxSepComps);
 
   virtual int getNComps() { return 1; }
   virtual void getDefaultColor(GfxColor *color);
@@ -491,6 +608,10 @@ public:
   Function *getFunc() { return func; }
 
 private:
+
+  GfxSeparationColorSpace(GooString *nameA, GfxColorSpace *altA,
+			  Function *funcA, GBool nonMarkingA,
+			  Guint overprintMaskA, int *mappingA);
 
   GooString *name;		// colorant name
   GfxColorSpace *alt;		// alternate color space
@@ -505,17 +626,21 @@ private:
 class GfxDeviceNColorSpace: public GfxColorSpace {
 public:
 
-  GfxDeviceNColorSpace(int nCompsA, GfxColorSpace *alt, Function *func);
+  GfxDeviceNColorSpace(int nCompsA, GooString **namesA,
+		       GfxColorSpace *alt, Function *func, GooList *sepsCS);
   virtual ~GfxDeviceNColorSpace();
   virtual GfxColorSpace *copy();
   virtual GfxColorSpaceMode getMode() { return csDeviceN; }
 
   // Construct a DeviceN color space.  Returns NULL if unsuccessful.
-  static GfxColorSpace *parse(Array *arr);
+  static GfxColorSpace *parse(Array *arr, OutputDev *out, int recursion);
 
   virtual void getGray(GfxColor *color, GfxGray *gray);
   virtual void getRGB(GfxColor *color, GfxRGB *rgb);
   virtual void getCMYK(GfxColor *color, GfxCMYK *cmyk);
+  virtual void getDeviceN(GfxColor *color, GfxColor *deviceN);
+
+  virtual void createMapping(GooList *separationList, int maxSepComps);
 
   virtual int getNComps() { return nComps; }
   virtual void getDefaultColor(GfxColor *color);
@@ -529,12 +654,17 @@ public:
 
 private:
 
+  GfxDeviceNColorSpace(int nCompsA, GooString **namesA,
+		       GfxColorSpace *alt, Function *func, GooList *sepsCSA,
+		       int *mappingA, GBool nonMarkingA, Guint overprintMaskA);
+
   int nComps;			// number of components
   GooString			// colorant names
     *names[gfxColorMaxComps];
   GfxColorSpace *alt;		// alternate color space
   Function *func;		// tint transform (into alternate color space)
   GBool nonMarking;
+  GooList *sepsCS; // list of separation cs for spot colorants;
 };
 
 //------------------------------------------------------------------------
@@ -550,11 +680,12 @@ public:
   virtual GfxColorSpaceMode getMode() { return csPattern; }
 
   // Construct a Pattern color space.  Returns NULL if unsuccessful.
-  static GfxColorSpace *parse(Array *arr);
+  static GfxColorSpace *parse(Array *arr, OutputDev *out, int recursion);
 
   virtual void getGray(GfxColor *color, GfxGray *gray);
   virtual void getRGB(GfxColor *color, GfxRGB *rgb);
   virtual void getCMYK(GfxColor *color, GfxCMYK *cmyk);
+  virtual void getDeviceN(GfxColor *color, GfxColor *deviceN);
 
   virtual int getNComps() { return 0; }
   virtual void getDefaultColor(GfxColor *color);
@@ -578,7 +709,7 @@ public:
   GfxPattern(int typeA);
   virtual ~GfxPattern();
 
-  static GfxPattern *parse(Object *obj);
+  static GfxPattern *parse(Object *obj, OutputDev *out);
 
   virtual GfxPattern *copy() = 0;
 
@@ -603,27 +734,27 @@ public:
 
   int getPaintType() { return paintType; }
   int getTilingType() { return tilingType; }
-  FixedPoint *getBBox() { return bbox; }
-  FixedPoint getXStep() { return xStep; }
-  FixedPoint getYStep() { return yStep; }
+  double *getBBox() { return bbox; }
+  double getXStep() { return xStep; }
+  double getYStep() { return yStep; }
   Dict *getResDict()
     { return resDict.isDict() ? resDict.getDict() : (Dict *)NULL; }
-  FixedPoint *getMatrix() { return matrix; }
+  double *getMatrix() { return matrix; }
   Object *getContentStream() { return &contentStream; }
 
 private:
 
   GfxTilingPattern(int paintTypeA, int tilingTypeA,
-		   FixedPoint *bboxA, FixedPoint xStepA, FixedPoint yStepA,
-		   Object *resDictA, FixedPoint *matrixA,
+		   double *bboxA, double xStepA, double yStepA,
+		   Object *resDictA, double *matrixA,
 		   Object *contentStreamA);
 
   int paintType;
   int tilingType;
-  FixedPoint bbox[4];
-  FixedPoint xStep, yStep;
+  double bbox[4];
+  double xStep, yStep;
   Object resDict;
-  FixedPoint matrix[6];
+  double matrix[6];
   Object contentStream;
 };
 
@@ -634,20 +765,20 @@ private:
 class GfxShadingPattern: public GfxPattern {
 public:
 
-  static GfxShadingPattern *parse(Object *patObj);
+  static GfxShadingPattern *parse(Object *patObj, OutputDev *out);
   virtual ~GfxShadingPattern();
 
   virtual GfxPattern *copy();
 
   GfxShading *getShading() { return shading; }
-  FixedPoint *getMatrix() { return matrix; }
+  double *getMatrix() { return matrix; }
 
 private:
 
-  GfxShadingPattern(GfxShading *shadingA, FixedPoint *matrixA);
+  GfxShadingPattern(GfxShading *shadingA, double *matrixA);
 
   GfxShading *shading;
-  FixedPoint matrix[6];
+  double matrix[6];
 };
 
 //------------------------------------------------------------------------
@@ -661,7 +792,7 @@ public:
   GfxShading(GfxShading *shading);
   virtual ~GfxShading();
 
-  static GfxShading *parse(Object *obj);
+  static GfxShading *parse(Object *obj, OutputDev *out);
 
   virtual GfxShading *copy() = 0;
 
@@ -669,20 +800,65 @@ public:
   GfxColorSpace *getColorSpace() { return colorSpace; }
   GfxColor *getBackground() { return &background; }
   GBool getHasBackground() { return hasBackground; }
-  void getBBox(FixedPoint *xMinA, FixedPoint *yMinA, FixedPoint *xMaxA, FixedPoint *yMaxA)
+  void getBBox(double *xMinA, double *yMinA, double *xMaxA, double *yMaxA)
     { *xMinA = xMin; *yMinA = yMin; *xMaxA = xMax; *yMaxA = yMax; }
   GBool getHasBBox() { return hasBBox; }
 
 protected:
 
-  GBool init(Dict *dict);
+  GBool init(Dict *dict, OutputDev *out);
 
   int type;
   GfxColorSpace *colorSpace;
   GfxColor background;
   GBool hasBackground;
-  FixedPoint xMin, yMin, xMax, yMax;
+  double xMin, yMin, xMax, yMax;
   GBool hasBBox;
+};
+
+//------------------------------------------------------------------------
+// GfxUnivariateShading
+//------------------------------------------------------------------------
+
+class GfxUnivariateShading: public GfxShading {
+public:
+
+  GfxUnivariateShading(int typeA,
+		       double t0A, double t1A,
+		       Function **funcsA, int nFuncsA,
+		       GBool extend0A, GBool extend1A);
+  GfxUnivariateShading(GfxUnivariateShading *shading);
+  virtual ~GfxUnivariateShading();
+
+  double getDomain0() { return t0; }
+  double getDomain1() { return t1; }
+  GBool getExtend0() { return extend0; }
+  GBool getExtend1() { return extend1; }
+  int getNFuncs() { return nFuncs; }
+  Function *getFunc(int i) { return funcs[i]; }
+  void getColor(double t, GfxColor *color);
+
+  void setupCache(const Matrix *ctm,
+		  double xMin, double yMin,
+		  double xMax, double yMax);
+
+  virtual void getParameterRange(double *lower, double *upper,
+				 double xMin, double yMin,
+				 double xMax, double yMax) = 0;
+
+  virtual double getDistance(double tMin, double tMax) = 0;
+
+private:
+
+  double t0, t1;
+  Function *funcs[gfxColorMaxComps];
+  int nFuncs;
+  GBool extend0, extend1;
+
+  int cacheSize, lastMatch;
+  double *cacheBounds;
+  double *cacheCoeff;
+  double *cacheValues;
 };
 
 //------------------------------------------------------------------------
@@ -692,28 +868,28 @@ protected:
 class GfxFunctionShading: public GfxShading {
 public:
 
-  GfxFunctionShading(FixedPoint x0A, FixedPoint y0A,
-		     FixedPoint x1A, FixedPoint y1A,
-		     FixedPoint *matrixA,
+  GfxFunctionShading(double x0A, double y0A,
+		     double x1A, double y1A,
+		     double *matrixA,
 		     Function **funcsA, int nFuncsA);
   GfxFunctionShading(GfxFunctionShading *shading);
   virtual ~GfxFunctionShading();
 
-  static GfxFunctionShading *parse(Dict *dict);
+  static GfxFunctionShading *parse(Dict *dict, OutputDev *out);
 
   virtual GfxShading *copy();
 
-  void getDomain(FixedPoint *x0A, FixedPoint *y0A, FixedPoint *x1A, FixedPoint *y1A)
+  void getDomain(double *x0A, double *y0A, double *x1A, double *y1A)
     { *x0A = x0; *y0A = y0; *x1A = x1; *y1A = y1; }
-  FixedPoint *getMatrix() { return matrix; }
+  double *getMatrix() { return matrix; }
   int getNFuncs() { return nFuncs; }
   Function *getFunc(int i) { return funcs[i]; }
-  void getColor(FixedPoint x, FixedPoint y, GfxColor *color);
+  void getColor(double x, double y, GfxColor *color);
 
 private:
 
-  FixedPoint x0, y0, x1, y1;
-  FixedPoint matrix[6];
+  double x0, y0, x1, y1;
+  double matrix[6];
   Function *funcs[gfxColorMaxComps];
   int nFuncs;
 };
@@ -722,77 +898,67 @@ private:
 // GfxAxialShading
 //------------------------------------------------------------------------
 
-class GfxAxialShading: public GfxShading {
+class GfxAxialShading: public GfxUnivariateShading {
 public:
 
-  GfxAxialShading(FixedPoint x0A, FixedPoint y0A,
-		  FixedPoint x1A, FixedPoint y1A,
-		  FixedPoint t0A, FixedPoint t1A,
+  GfxAxialShading(double x0A, double y0A,
+		  double x1A, double y1A,
+		  double t0A, double t1A,
 		  Function **funcsA, int nFuncsA,
 		  GBool extend0A, GBool extend1A);
   GfxAxialShading(GfxAxialShading *shading);
   virtual ~GfxAxialShading();
 
-  static GfxAxialShading *parse(Dict *dict);
+  static GfxAxialShading *parse(Dict *dict, OutputDev *out);
 
   virtual GfxShading *copy();
 
-  void getCoords(FixedPoint *x0A, FixedPoint *y0A, FixedPoint *x1A, FixedPoint *y1A)
+  void getCoords(double *x0A, double *y0A, double *x1A, double *y1A)
     { *x0A = x0; *y0A = y0; *x1A = x1; *y1A = y1; }
-  FixedPoint getDomain0() { return t0; }
-  FixedPoint getDomain1() { return t1; }
-  GBool getExtend0() { return extend0; }
-  GBool getExtend1() { return extend1; }
-  int getNFuncs() { return nFuncs; }
-  Function *getFunc(int i) { return funcs[i]; }
-  void getColor(FixedPoint t, GfxColor *color);
+
+  virtual void getParameterRange(double *lower, double *upper,
+				 double xMin, double yMin,
+				 double xMax, double yMax);
+
+  virtual double getDistance(double tMin, double tMax);
 
 private:
 
-  FixedPoint x0, y0, x1, y1;
-  FixedPoint t0, t1;
-  Function *funcs[gfxColorMaxComps];
-  int nFuncs;
-  GBool extend0, extend1;
+  double x0, y0, x1, y1;
 };
 
 //------------------------------------------------------------------------
 // GfxRadialShading
 //------------------------------------------------------------------------
 
-class GfxRadialShading: public GfxShading {
+class GfxRadialShading: public GfxUnivariateShading {
 public:
 
-  GfxRadialShading(FixedPoint x0A, FixedPoint y0A, FixedPoint r0A,
-		   FixedPoint x1A, FixedPoint y1A, FixedPoint r1A,
-		   FixedPoint t0A, FixedPoint t1A,
+  GfxRadialShading(double x0A, double y0A, double r0A,
+		   double x1A, double y1A, double r1A,
+		   double t0A, double t1A,
 		   Function **funcsA, int nFuncsA,
 		   GBool extend0A, GBool extend1A);
   GfxRadialShading(GfxRadialShading *shading);
   virtual ~GfxRadialShading();
 
-  static GfxRadialShading *parse(Dict *dict);
+  static GfxRadialShading *parse(Dict *dict, OutputDev *out);
 
   virtual GfxShading *copy();
 
-  void getCoords(FixedPoint *x0A, FixedPoint *y0A, FixedPoint *r0A,
-		 FixedPoint *x1A, FixedPoint *y1A, FixedPoint *r1A)
+  void getCoords(double *x0A, double *y0A, double *r0A,
+		 double *x1A, double *y1A, double *r1A)
     { *x0A = x0; *y0A = y0; *r0A = r0; *x1A = x1; *y1A = y1; *r1A = r1; }
-  FixedPoint getDomain0() { return t0; }
-  FixedPoint getDomain1() { return t1; }
-  GBool getExtend0() { return extend0; }
-  GBool getExtend1() { return extend1; }
-  int getNFuncs() { return nFuncs; }
-  Function *getFunc(int i) { return funcs[i]; }
-  void getColor(FixedPoint t, GfxColor *color);
+
+  virtual void getParameterRange(double *lower, double *upper,
+				 double xMin, double yMin,
+				 double xMax, double yMax);
+
+  virtual double getDistance(double tMin, double tMax);
 
 private:
 
-  FixedPoint x0, y0, r0, x1, y1, r1;
-  FixedPoint t0, t1;
-  Function *funcs[gfxColorMaxComps];
-  int nFuncs;
-  GBool extend0, extend1;
+  double x0, y0, r0, x1, y1, r1;
 };
 
 //------------------------------------------------------------------------
@@ -800,7 +966,7 @@ private:
 //------------------------------------------------------------------------
 
 struct GfxGouraudVertex {
-  FixedPoint x, y;
+  double x, y;
   GfxColor color;
 };
 
@@ -814,14 +980,41 @@ public:
   GfxGouraudTriangleShading(GfxGouraudTriangleShading *shading);
   virtual ~GfxGouraudTriangleShading();
 
-  static GfxGouraudTriangleShading *parse(int typeA, Dict *dict, Stream *str);
+  static GfxGouraudTriangleShading *parse(int typeA, Dict *dict, Stream *str, OutputDev *out);
 
   virtual GfxShading *copy();
 
   int getNTriangles() { return nTriangles; }
-  void getTriangle(int i, FixedPoint *x0, FixedPoint *y0, GfxColor *color0,
-		   FixedPoint *x1, FixedPoint *y1, GfxColor *color1,
-		   FixedPoint *x2, FixedPoint *y2, GfxColor *color2);
+
+  bool isParameterized() const { return nFuncs > 0; }
+
+  /**
+   * @precondition isParameterized() == true
+   */
+  double getParameterDomainMin() const { assert(isParameterized()); return funcs[0]->getDomainMin(0); }
+
+  /**
+   * @precondition isParameterized() == true
+   */
+  double getParameterDomainMax() const { assert(isParameterized()); return funcs[0]->getDomainMax(0); }
+
+  /**
+   * @precondition isParameterized() == false
+   */
+  void getTriangle(int i, double *x0, double *y0, GfxColor *color0,
+		   double *x1, double *y1, GfxColor *color1,
+		   double *x2, double *y2, GfxColor *color2);
+
+  /**
+   * Variant for functions.
+   *
+   * @precondition isParameterized() == true
+   */
+  void getTriangle(int i, double *x0, double *y0, double *color0,
+		   double *x1, double *y1, double *color1,
+		   double *x2, double *y2, double *color2);
+
+  void getParameterizedColor(double t, GfxColor *color);
 
 private:
 
@@ -837,10 +1030,32 @@ private:
 // GfxPatchMeshShading
 //------------------------------------------------------------------------
 
+/**
+ * A tensor product cubic bezier patch consisting of 4x4 points and 4 color
+ * values.
+ *
+ * See the Shading Type 7 specifications. Note that Shading Type 6 is also
+ * represented using GfxPatch.
+ */
 struct GfxPatch {
-  FixedPoint x[4][4];
-  FixedPoint y[4][4];
-  GfxColor color[2][2];
+  /**
+   * Represents a single color value for the patch.
+   */
+  struct ColorValue {
+    /**
+     * For parameterized patches, only element 0 is valid; it contains
+     * the single parameter.
+     *
+     * For non-parameterized patches, c contains all color components
+     * as decoded from the input stream. In this case, you will need to
+     * use dblToCol() before assigning them to GfxColor.
+     */
+    double c[gfxColorMaxComps];
+  };
+
+  double x[4][4];
+  double y[4][4];
+  ColorValue color[2][2];
 };
 
 class GfxPatchMeshShading: public GfxShading {
@@ -851,12 +1066,26 @@ public:
   GfxPatchMeshShading(GfxPatchMeshShading *shading);
   virtual ~GfxPatchMeshShading();
 
-  static GfxPatchMeshShading *parse(int typeA, Dict *dict, Stream *str);
+  static GfxPatchMeshShading *parse(int typeA, Dict *dict, Stream *str, OutputDev *out);
 
   virtual GfxShading *copy();
 
   int getNPatches() { return nPatches; }
   GfxPatch *getPatch(int i) { return &patches[i]; }
+
+  bool isParameterized() const { return nFuncs > 0; }
+
+  /**
+   * @precondition isParameterized() == true
+   */
+  double getParameterDomainMin() const { assert(isParameterized()); return funcs[0]->getDomainMin(0); }
+
+  /**
+   * @precondition isParameterized() == true
+   */
+  double getParameterDomainMax() const { assert(isParameterized()); return funcs[0]->getDomainMax(0); }
+
+  void getParameterizedColor(double t, GfxColor *color);
 
 private:
 
@@ -893,15 +1122,20 @@ public:
   int getBits() { return bits; }
 
   // Get decode table.
-  FixedPoint getDecodeLow(int i) { return decodeLow[i]; }
-  FixedPoint getDecodeHigh(int i) { return decodeLow[i] + decodeRange[i]; }
+  double getDecodeLow(int i) { return decodeLow[i]; }
+  double getDecodeHigh(int i) { return decodeLow[i] + decodeRange[i]; }
+  
+  bool useRGBLine() { return (colorSpace2 && colorSpace2->useGetRGBLine ()) || (!colorSpace2 && colorSpace->useGetRGBLine ()); }
 
   // Convert an image pixel to a color.
   void getGray(Guchar *x, GfxGray *gray);
   void getRGB(Guchar *x, GfxRGB *rgb);
   void getRGBLine(Guchar *in, unsigned int *out, int length);
+  void getRGBLine(Guchar *in, Guchar *out, int length);
+  void getRGBXLine(Guchar *in, Guchar *out, int length);
   void getGrayLine(Guchar *in, Guchar *out, int length);
   void getCMYK(Guchar *x, GfxCMYK *cmyk);
+  void getDeviceN(Guchar *x, GfxColor *deviceN);
   void getColor(Guchar *x, GfxColor *color);
 
 private:
@@ -915,11 +1149,12 @@ private:
   int nComps2;			// number of components in colorSpace2
   GfxColorComp *		// lookup table
     lookup[gfxColorMaxComps];
+  GfxColorComp *		// optimized case lookup table
+    lookup2[gfxColorMaxComps];
   Guchar *byte_lookup;
-  Guchar *tmp_line;
-  FixedPoint			// minimum values for each component
+  double			// minimum values for each component
     decodeLow[gfxColorMaxComps];
-  FixedPoint			// max - min value for each component
+  double			// max - min value for each component
     decodeRange[gfxColorMaxComps];
   GBool ok;
 };
@@ -932,7 +1167,7 @@ class GfxSubpath {
 public:
 
   // Constructor.
-  GfxSubpath(FixedPoint x1, FixedPoint y1);
+  GfxSubpath(double x1, double y1);
 
   // Destructor.
   ~GfxSubpath();
@@ -942,31 +1177,34 @@ public:
 
   // Get points.
   int getNumPoints() { return n; }
-  FixedPoint getX(int i) { return x[i]; }
-  FixedPoint getY(int i) { return y[i]; }
+  double getX(int i) { return x[i]; }
+  double getY(int i) { return y[i]; }
   GBool getCurve(int i) { return curve[i]; }
 
+  void setX(int i, double a) { x[i] = a; }
+  void setY(int i, double a) { y[i] = a; }
+
   // Get last point.
-  FixedPoint getLastX() { return x[n-1]; }
-  FixedPoint getLastY() { return y[n-1]; }
+  double getLastX() { return x[n-1]; }
+  double getLastY() { return y[n-1]; }
 
   // Add a line segment.
-  void lineTo(FixedPoint x1, FixedPoint y1);
+  void lineTo(double x1, double y1);
 
   // Add a Bezier curve.
-  void curveTo(FixedPoint x1, FixedPoint y1, FixedPoint x2, FixedPoint y2,
-	       FixedPoint x3, FixedPoint y3);
+  void curveTo(double x1, double y1, double x2, double y2,
+	       double x3, double y3);
 
   // Close the subpath.
   void close();
   GBool isClosed() { return closed; }
 
   // Add (<dx>, <dy>) to each point in the subpath.
-  void offset(FixedPoint dx, FixedPoint dy);
+  void offset(double dx, double dy);
 
 private:
 
-  FixedPoint *x, *y;		// points
+  double *x, *y;		// points
   GBool *curve;			// curve[i] => point i is a control point
 				//   for a Bezier curve
   int n;			// number of points
@@ -1000,18 +1238,18 @@ public:
   GfxSubpath *getSubpath(int i) { return subpaths[i]; }
 
   // Get last point on last subpath.
-  FixedPoint getLastX() { return subpaths[n-1]->getLastX(); }
-  FixedPoint getLastY() { return subpaths[n-1]->getLastY(); }
+  double getLastX() { return subpaths[n-1]->getLastX(); }
+  double getLastY() { return subpaths[n-1]->getLastY(); }
 
   // Move the current point.
-  void moveTo(FixedPoint x, FixedPoint y);
+  void moveTo(double x, double y);
 
   // Add a segment to the last subpath.
-  void lineTo(FixedPoint x, FixedPoint y);
+  void lineTo(double x, double y);
 
   // Add a Bezier curve to the last subpath
-  void curveTo(FixedPoint x1, FixedPoint y1, FixedPoint x2, FixedPoint y2,
-	       FixedPoint x3, FixedPoint y3);
+  void curveTo(double x1, double y1, double x2, double y2,
+	       double x3, double y3);
 
   // Close the last subpath.
   void close();
@@ -1020,17 +1258,17 @@ public:
   void append(GfxPath *path);
 
   // Add (<dx>, <dy>) to each point in the path.
-  void offset(FixedPoint dx, FixedPoint dy);
+  void offset(double dx, double dy);
 
 private:
 
   GBool justMoved;		// set if a new subpath was just started
-  FixedPoint firstX, firstY;	// first point in new subpath
+  double firstX, firstY;	// first point in new subpath
   GfxSubpath **subpaths;	// subpaths
   int n;			// number of subpaths
   int size;			// size of subpaths array
 
-  GfxPath(GBool justMoved1, FixedPoint firstX1, FixedPoint firstY1,
+  GfxPath(GBool justMoved1, double firstX1, double firstY1,
 	  GfxSubpath **subpaths1, int n1, int size1);
 };
 
@@ -1040,30 +1278,86 @@ private:
 
 class GfxState {
 public:
+  /**
+   * When GfxState::getReusablePath() is invoked, the currently active
+   * path is taken per reference and its coordinates can be re-edited.
+   *
+   * A ReusablePathIterator is intented to reduce overhead when the same
+   * path type is used a lot of times, only with different coordinates. It
+   * allows just to update the coordinates (occuring in the same order as
+   * in the original path).
+   */
+  class ReusablePathIterator {
+  public:
+    /**
+     * Creates the ReusablePathIterator. This should only be done from
+     * GfxState::getReusablePath().
+     *
+     * @param path the path as it is used so far. Changing this path,
+     * deleting it or starting a new path from scratch will most likely
+     * invalidate the iterator (and may cause serious problems). Make
+     * sure the path's memory structure is not changed during the
+     * lifetime of the ReusablePathIterator.
+     */
+    ReusablePathIterator( GfxPath* path );
+
+    /**
+     * Returns true if and only if the current iterator position is
+     * beyond the last valid point.
+     *
+     * A call to setCoord() will be undefined.
+     */
+    bool isEnd() const;
+
+    /**
+     * Advances the iterator.
+     */
+    void next();
+
+     /**
+     * Updates the coordinates associated to the current iterator
+     * position.
+     */
+     void setCoord( double x, double y );
+
+    /**
+     * Resets the iterator.
+     */
+    void reset();
+  private:
+    GfxPath *path;
+    int subPathOff;
+
+    int coordOff;
+    int numCoords;
+
+    GfxSubpath *curSubPath;
+  };
 
   // Construct a default GfxState, for a device with resolution <hDPI>
   // x <vDPI>, page box <pageBox>, page rotation <rotateA>, and
   // coordinate system specified by <upsideDown>.
-  GfxState(FixedPoint hDPIA, FixedPoint vDPIA, PDFRectangle *pageBox,
+  GfxState(double hDPIA, double vDPIA, PDFRectangle *pageBox,
 	   int rotateA, GBool upsideDown);
 
   // Destructor.
   ~GfxState();
 
   // Copy.
-  GfxState *copy() { return new GfxState(this); }
+  GfxState *copy(GBool copyPath = gFalse)
+    { return new GfxState(this, copyPath); }
 
   // Accessors.
-  FixedPoint getHDPI() { return hDPI; }
-  FixedPoint getVDPI() { return vDPI; }
-  FixedPoint *getCTM() { return ctm; }
+  double getHDPI() { return hDPI; }
+  double getVDPI() { return vDPI; }
+  double *getCTM() { return ctm; }
   void getCTM(Matrix *m) { memcpy (m->m, ctm, sizeof m->m); }
-  FixedPoint getX1() { return px1; }
-  FixedPoint getY1() { return py1; }
-  FixedPoint getX2() { return px2; }
-  FixedPoint getY2() { return py2; }
-  FixedPoint getPageWidth() { return pageWidth; }
-  FixedPoint getPageHeight() { return pageHeight; }
+  double getX1() { return px1; }
+  double getY1() { return py1; }
+  double getX2() { return px2; }
+  double getY2() { return py2; }
+  double getPageWidth() { return pageWidth; }
+  double getPageHeight() { return pageHeight; }
   int getRotate() { return rotate; }
   GfxColor *getFillColor() { return &fillColor; }
   GfxColor *getStrokeColor() { return &strokeColor; }
@@ -1077,76 +1371,81 @@ public:
     { strokeColorSpace->getRGB(&strokeColor, rgb); }
   void getFillCMYK(GfxCMYK *cmyk)
     { fillColorSpace->getCMYK(&fillColor, cmyk); }
+  void getFillDeviceN(GfxColor *deviceN)
+    { fillColorSpace->getDeviceN(&fillColor, deviceN); }
   void getStrokeCMYK(GfxCMYK *cmyk)
     { strokeColorSpace->getCMYK(&strokeColor, cmyk); }
+  void getStrokeDeviceN(GfxColor *deviceN)
+    { strokeColorSpace->getDeviceN(&strokeColor, deviceN); }
   GfxColorSpace *getFillColorSpace() { return fillColorSpace; }
   GfxColorSpace *getStrokeColorSpace() { return strokeColorSpace; }
   GfxPattern *getFillPattern() { return fillPattern; }
   GfxPattern *getStrokePattern() { return strokePattern; }
   GfxBlendMode getBlendMode() { return blendMode; }
-  FixedPoint getFillOpacity() { return fillOpacity; }
-  FixedPoint getStrokeOpacity() { return strokeOpacity; }
+  double getFillOpacity() { return fillOpacity; }
+  double getStrokeOpacity() { return strokeOpacity; }
   GBool getFillOverprint() { return fillOverprint; }
   GBool getStrokeOverprint() { return strokeOverprint; }
+  int getOverprintMode() { return overprintMode; }
   Function **getTransfer() { return transfer; }
-  FixedPoint getLineWidth() { return lineWidth; }
-  void getLineDash(FixedPoint **dash, int *length, FixedPoint *start)
+  double getLineWidth() { return lineWidth; }
+  void getLineDash(double **dash, int *length, double *start)
     { *dash = lineDash; *length = lineDashLength; *start = lineDashStart; }
   int getFlatness() { return flatness; }
   int getLineJoin() { return lineJoin; }
   int getLineCap() { return lineCap; }
-  FixedPoint getMiterLimit() { return miterLimit; }
+  double getMiterLimit() { return miterLimit; }
   GBool getStrokeAdjust() { return strokeAdjust; }
   GBool getAlphaIsShape() { return alphaIsShape; }
   GBool getTextKnockout() { return textKnockout; }
   GfxFont *getFont() { return font; }
-  FixedPoint getFontSize() { return fontSize; }
-  FixedPoint *getTextMat() { return textMat; }
-  FixedPoint getCharSpace() { return charSpace; }
-  FixedPoint getWordSpace() { return wordSpace; }
-  FixedPoint getHorizScaling() { return horizScaling; }
-  FixedPoint getLeading() { return leading; }
-  FixedPoint getRise() { return rise; }
+  double getFontSize() { return fontSize; }
+  double *getTextMat() { return textMat; }
+  double getCharSpace() { return charSpace; }
+  double getWordSpace() { return wordSpace; }
+  double getHorizScaling() { return horizScaling; }
+  double getLeading() { return leading; }
+  double getRise() { return rise; }
   int getRender() { return render; }
   GfxPath *getPath() { return path; }
   void setPath(GfxPath *pathA);
-  FixedPoint getCurX() { return curX; }
-  FixedPoint getCurY() { return curY; }
-  void getClipBBox(FixedPoint *xMin, FixedPoint *yMin, FixedPoint *xMax, FixedPoint *yMax)
+  double getCurX() { return curX; }
+  double getCurY() { return curY; }
+  void getClipBBox(double *xMin, double *yMin, double *xMax, double *yMax)
     { *xMin = clipXMin; *yMin = clipYMin; *xMax = clipXMax; *yMax = clipYMax; }
-  void getUserClipBBox(FixedPoint *xMin, FixedPoint *yMin, FixedPoint *xMax, FixedPoint *yMax);
-  FixedPoint getLineX() { return lineX; }
-  FixedPoint getLineY() { return lineY; }
+  void getUserClipBBox(double *xMin, double *yMin, double *xMax, double *yMax);
+  double getLineX() { return lineX; }
+  double getLineY() { return lineY; }
 
   // Is there a current point/path?
   GBool isCurPt() { return path->isCurPt(); }
   GBool isPath() { return path->isPath(); }
 
   // Transforms.
-  void transform(FixedPoint x1, FixedPoint y1, FixedPoint *x2, FixedPoint *y2)
+  void transform(double x1, double y1, double *x2, double *y2)
     { *x2 = ctm[0] * x1 + ctm[2] * y1 + ctm[4];
       *y2 = ctm[1] * x1 + ctm[3] * y1 + ctm[5]; }
-  void transformDelta(FixedPoint x1, FixedPoint y1, FixedPoint *x2, FixedPoint *y2)
+  void transformDelta(double x1, double y1, double *x2, double *y2)
     { *x2 = ctm[0] * x1 + ctm[2] * y1;
       *y2 = ctm[1] * x1 + ctm[3] * y1; }
-  void textTransform(FixedPoint x1, FixedPoint y1, FixedPoint *x2, FixedPoint *y2)
+  void textTransform(double x1, double y1, double *x2, double *y2)
     { *x2 = textMat[0] * x1 + textMat[2] * y1 + textMat[4];
       *y2 = textMat[1] * x1 + textMat[3] * y1 + textMat[5]; }
-  void textTransformDelta(FixedPoint x1, FixedPoint y1, FixedPoint *x2, FixedPoint *y2)
+  void textTransformDelta(double x1, double y1, double *x2, double *y2)
     { *x2 = textMat[0] * x1 + textMat[2] * y1;
       *y2 = textMat[1] * x1 + textMat[3] * y1; }
-  FixedPoint transformWidth(FixedPoint w);
-  FixedPoint getTransformedLineWidth()
+  double transformWidth(double w);
+  double getTransformedLineWidth()
     { return transformWidth(lineWidth); }
-  FixedPoint getTransformedFontSize();
-  void getFontTransMat(FixedPoint *m11, FixedPoint *m12, FixedPoint *m21, FixedPoint *m22);
+  double getTransformedFontSize();
+  void getFontTransMat(double *m11, double *m12, double *m21, double *m22);
 
   // Change state parameters.
-  void setCTM(FixedPoint a, FixedPoint b, FixedPoint c,
-	      FixedPoint d, FixedPoint e, FixedPoint f);
-  void concatCTM(FixedPoint a, FixedPoint b, FixedPoint c,
-		 FixedPoint d, FixedPoint e, FixedPoint f);
-  void shiftCTM(FixedPoint tx, FixedPoint ty);
+  void setCTM(double a, double b, double c,
+	      double d, double e, double f);
+  void concatCTM(double a, double b, double c,
+		 double d, double e, double f);
+  void shiftCTMAndClip(double tx, double ty);
   void setFillColorSpace(GfxColorSpace *colorSpace);
   void setStrokeColorSpace(GfxColorSpace *colorSpace);
   void setFillColor(GfxColor *color) { fillColor = *color; }
@@ -1154,46 +1453,46 @@ public:
   void setFillPattern(GfxPattern *pattern);
   void setStrokePattern(GfxPattern *pattern);
   void setBlendMode(GfxBlendMode mode) { blendMode = mode; }
-  void setFillOpacity(FixedPoint opac) { fillOpacity = opac; }
-  void setStrokeOpacity(FixedPoint opac) { strokeOpacity = opac; }
+  void setFillOpacity(double opac) { fillOpacity = opac; }
+  void setStrokeOpacity(double opac) { strokeOpacity = opac; }
   void setFillOverprint(GBool op) { fillOverprint = op; }
   void setStrokeOverprint(GBool op) { strokeOverprint = op; }
+  void setOverprintMode(int op) { overprintMode = op; }
   void setTransfer(Function **funcs);
-  void setLineWidth(FixedPoint width) { lineWidth = width; }
-  void setLineDash(FixedPoint *dash, int length, FixedPoint start);
+  void setLineWidth(double width) { lineWidth = width; }
+  void setLineDash(double *dash, int length, double start);
   void setFlatness(int flatness1) { flatness = flatness1; }
   void setLineJoin(int lineJoin1) { lineJoin = lineJoin1; }
   void setLineCap(int lineCap1) { lineCap = lineCap1; }
-  void setMiterLimit(FixedPoint limit) { miterLimit = limit; }
+  void setMiterLimit(double limit) { miterLimit = limit; }
   void setStrokeAdjust(GBool sa) { strokeAdjust = sa; }
   void setAlphaIsShape(GBool ais) { alphaIsShape = ais; }
   void setTextKnockout(GBool tk) { textKnockout = tk; }
-  void setFont(GfxFont *fontA, FixedPoint fontSizeA);
-  void setFontSize(FixedPoint fontSize1) { fontSize = fontSize1; }
-  void setTextMat(FixedPoint a, FixedPoint b, FixedPoint c,
-		  FixedPoint d, FixedPoint e, FixedPoint f)
+  void setFont(GfxFont *fontA, double fontSizeA);
+  void setTextMat(double a, double b, double c,
+		  double d, double e, double f)
     { textMat[0] = a; textMat[1] = b; textMat[2] = c;
       textMat[3] = d; textMat[4] = e; textMat[5] = f; }
-  void setCharSpace(FixedPoint space)
+  void setCharSpace(double space)
     { charSpace = space; }
-  void setWordSpace(FixedPoint space)
+  void setWordSpace(double space)
     { wordSpace = space; }
-  void setHorizScaling(FixedPoint scale)
-    { horizScaling = (FixedPoint)0.01 * scale; }
-  void setLeading(FixedPoint leadingA)
+  void setHorizScaling(double scale)
+    { horizScaling = 0.01 * scale; }
+  void setLeading(double leadingA)
     { leading = leadingA; }
-  void setRise(FixedPoint riseA)
+  void setRise(double riseA)
     { rise = riseA; }
   void setRender(int renderA)
     { render = renderA; }
 
   // Add to path.
-  void moveTo(FixedPoint x, FixedPoint y)
+  void moveTo(double x, double y)
     { path->moveTo(curX = x, curY = y); }
-  void lineTo(FixedPoint x, FixedPoint y)
+  void lineTo(double x, double y)
     { path->lineTo(curX = x, curY = y); }
-  void curveTo(FixedPoint x1, FixedPoint y1, FixedPoint x2, FixedPoint y2,
-	       FixedPoint x3, FixedPoint y3)
+  void curveTo(double x1, double y1, double x2, double y2,
+	       double x3, double y3)
     { path->curveTo(x1, y1, x2, y2, curX = x3, curY = y3); }
   void closePath()
     { path->close(); curX = path->getLastX(); curY = path->getLastY(); }
@@ -1202,28 +1501,31 @@ public:
   // Update clip region.
   void clip();
   void clipToStrokePath();
+  void clipToRect(double xMin, double yMin, double xMax, double yMax);
 
   // Text position.
-  void textSetPos(FixedPoint tx, FixedPoint ty) { lineX = tx; lineY = ty; }
-  void textMoveTo(FixedPoint tx, FixedPoint ty)
+  void textSetPos(double tx, double ty) { lineX = tx; lineY = ty; }
+  void textMoveTo(double tx, double ty)
     { lineX = tx; lineY = ty; textTransform(tx, ty, &curX, &curY); }
-  void textShift(FixedPoint tx, FixedPoint ty);
-  void shift(FixedPoint dx, FixedPoint dy);
+  void textShift(double tx, double ty);
+  void shift(double dx, double dy);
 
   // Push/pop GfxState on/off stack.
   GfxState *save();
   GfxState *restore();
   GBool hasSaves() { return saved != NULL; }
+  GBool isParentState(GfxState *state) { return saved == state || (saved && saved->isParentState(state)); }
 
   // Misc
   GBool parseBlendMode(Object *obj, GfxBlendMode *mode);
 
+  ReusablePathIterator *getReusablePath() { return new ReusablePathIterator(path); }
 private:
 
-  FixedPoint hDPI, vDPI;		// resolution
-  FixedPoint ctm[6];		// coord transform matrix
-  FixedPoint px1, py1, px2, py2;	// page corners (user coords)
-  FixedPoint pageWidth, pageHeight;	// page size (pixels)
+  double hDPI, vDPI;		// resolution
+  double ctm[6];		// coord transform matrix
+  double px1, py1, px2, py2;	// page corners (user coords)
+  double pageWidth, pageHeight;	// page size (pixels)
   int rotate;			// page rotation angle
 
   GfxColorSpace *fillColorSpace;   // fill color space
@@ -1233,47 +1535,48 @@ private:
   GfxPattern *fillPattern;	// fill pattern
   GfxPattern *strokePattern;	// stroke pattern
   GfxBlendMode blendMode;	// transparency blend mode
-  FixedPoint fillOpacity;		// fill opacity
-  FixedPoint strokeOpacity;		// stroke opacity
+  double fillOpacity;		// fill opacity
+  double strokeOpacity;		// stroke opacity
   GBool fillOverprint;		// fill overprint
   GBool strokeOverprint;	// stroke overprint
+  int overprintMode;		// overprint mode
   Function *transfer[4];	// transfer function (entries may be: all
 				//   NULL = identity; last three NULL =
 				//   single function; all four non-NULL =
 				//   R,G,B,gray functions)
 
-  FixedPoint lineWidth;		// line width
-  FixedPoint *lineDash;		// line dash
+  double lineWidth;		// line width
+  double *lineDash;		// line dash
   int lineDashLength;
-  FixedPoint lineDashStart;
+  double lineDashStart;
   int flatness;			// curve flatness
   int lineJoin;			// line join style
   int lineCap;			// line cap style
-  FixedPoint miterLimit;		// line miter limit
+  double miterLimit;		// line miter limit
   GBool strokeAdjust;		// stroke adjustment
   GBool alphaIsShape;		// alpha is shape
   GBool textKnockout;		// text knockout
 
   GfxFont *font;		// font
-  FixedPoint fontSize;		// font size
-  FixedPoint textMat[6];		// text matrix
-  FixedPoint charSpace;		// character spacing
-  FixedPoint wordSpace;		// word spacing
-  FixedPoint horizScaling;		// horizontal scaling
-  FixedPoint leading;		// text leading
-  FixedPoint rise;			// text rise
+  double fontSize;		// font size
+  double textMat[6];		// text matrix
+  double charSpace;		// character spacing
+  double wordSpace;		// word spacing
+  double horizScaling;		// horizontal scaling
+  double leading;		// text leading
+  double rise;			// text rise
   int render;			// text rendering mode
 
   GfxPath *path;		// array of path elements
-  FixedPoint curX, curY;		// current point (user coords)
-  FixedPoint lineX, lineY;		// start of current text line (text coords)
+  double curX, curY;		// current point (user coords)
+  double lineX, lineY;		// start of current text line (text coords)
 
-  FixedPoint clipXMin, clipYMin,	// bounding box for clip region
+  double clipXMin, clipYMin,	// bounding box for clip region
          clipXMax, clipYMax;
 
   GfxState *saved;		// next GfxState on stack
 
-  GfxState(GfxState *state);
+  GfxState(GfxState *state, GBool copyPath);
 };
 
 #endif

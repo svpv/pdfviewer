@@ -6,6 +6,21 @@
 //
 //========================================================================
 
+//========================================================================
+//
+// Modified under the Poppler project - http://poppler.freedesktop.org
+//
+// All changes made under the Poppler project to this file are licensed
+// under GPL version 2 or later
+//
+// Copyright (C) 2008, 2010, 2012 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2013 Adrian Johnson <ajohnson@redneon.com>
+//
+// To see a description of the changes please see the Changelog file that
+// came with your tarball or type make ChangeLog if you are building from git
+//
+//========================================================================
+
 #include <config.h>
 
 #ifdef USE_GCC_PRAGMAS
@@ -24,7 +39,7 @@
 // Object
 //------------------------------------------------------------------------
 
-const char *objTypeNames[numObjTypes] = {
+static const char *objTypeNames[numObjTypes] = {
   "boolean",
   "integer",
   "real",
@@ -38,7 +53,8 @@ const char *objTypeNames[numObjTypes] = {
   "cmd",
   "error",
   "eof",
-  "none"
+  "none",
+  "integer64"
 };
 
 #ifdef DEBUG_MEM
@@ -101,9 +117,9 @@ Object *Object::copy(Object *obj) {
   return obj;
 }
 
-Object *Object::fetch(XRef *xref, Object *obj) {
+Object *Object::fetch(XRef *xref, Object *obj, int recursion) {
   return (type == objRef && xref) ?
-         xref->fetch(ref.num, ref.gen, obj) : copy(obj);
+         xref->fetch(ref.num, ref.gen, obj, recursion) : copy(obj);
 }
 
 void Object::free() {
@@ -157,8 +173,7 @@ void Object::print(FILE *f) {
     fprintf(f, "%d", intg);
     break;
   case objReal:
-    //fprintf(f, "%g", real);
-    fprintf(f, "%d", real);
+    fprintf(f, "%g", real);
     break;
   case objString:
     fprintf(f, "(");
@@ -209,6 +224,9 @@ void Object::print(FILE *f) {
     break;
   case objNone:
     fprintf(f, "<none>");
+    break;
+  case objInt64:
+    fprintf(f, "%lld", int64g);
     break;
   }
 }

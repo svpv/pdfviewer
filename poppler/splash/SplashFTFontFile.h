@@ -4,6 +4,20 @@
 //
 //========================================================================
 
+//========================================================================
+//
+// Modified under the Poppler project - http://poppler.freedesktop.org
+//
+// All changes made under the Poppler project to this file are licensed
+// under GPL version 2 or later
+//
+// Copyright (C) 2006 Takashi Iwai <tiwai@suse.de>
+//
+// To see a description of the changes please see the Changelog file that
+// came with your tarball or type make ChangeLog if you are building from git
+//
+//========================================================================
+
 #ifndef SPLASHFTFONTFILE_H
 #define SPLASHFTFONTFILE_H
 
@@ -29,15 +43,15 @@ public:
 
   static SplashFontFile *loadType1Font(SplashFTFontEngine *engineA,
 				       SplashFontFileID *idA,
-				       SplashFontSrc *src, char **encA);
+				       SplashFontSrc *src, const char **encA);
   static SplashFontFile *loadCIDFont(SplashFTFontEngine *engineA,
 					 SplashFontFileID *idA,
 					 SplashFontSrc *src,
-					 Gushort *codeToCIDA, int codeToGIDLenA);
+					 int *codeToCIDA, int codeToGIDLenA);
   static SplashFontFile *loadTrueTypeFont(SplashFTFontEngine *engineA,
 					  SplashFontFileID *idA,
 					  SplashFontSrc *src,
-					  Gushort *codeToGIDA,
+					  int *codeToGIDA,
 					  int codeToGIDLenA,
 					  int faceIndexA=0);
 
@@ -54,14 +68,15 @@ private:
 		   SplashFontFileID *idA,
 		   SplashFontSrc *src,
 		   FT_Face faceA,
-		   Gushort *codeToGIDA, int codeToGIDLenA,
-		   GBool trueTypeA);
+		   int *codeToGIDA, int codeToGIDLenA,
+		   GBool trueTypeA, GBool type1A);
 
   SplashFTFontEngine *engine;
   FT_Face face;
-  Gushort *codeToGID;
+  int *codeToGID;
   int codeToGIDLen;
   GBool trueType;
+  GBool type1;
 
   friend class SplashFTFont;
 };

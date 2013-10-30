@@ -6,6 +6,29 @@
 //
 //========================================================================
 
+//========================================================================
+//
+// Modified under the Poppler project - http://poppler.freedesktop.org
+//
+// All changes made under the Poppler project to this file are licensed
+// under GPL version 2 or later
+//
+// Copyright (C) 2005 Jonathan Blandford <jrb@redhat.com>
+// Copyright (C) 2006 Thorkild Stray <thorkild@ifi.uio.no>
+// Copyright (C) 2007 Jeff Muizelaar <jeff@infidigm.net>
+// Copyright (C) 2007, 2011 Adrian Johnson <ajohnson@redneon.com>
+// Copyright (C) 2009-2013 Thomas Freitag <Thomas.Freitag@alfa.de>
+// Copyright (C) 2009, 2011 Carlos Garcia Campos <carlosgc@gnome.org>
+// Copyright (C) 2009, 2012, 2013 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2010 Christian Feuersänger <cfeuersaenger@googlemail.com>
+// Copyright (C) 2012 Fabio D'Urso <fabiodurso@hotmail.it>
+// Copyright (C) 2012 William Bader <williambader@hotmail.com>
+//
+// To see a description of the changes please see the Changelog file that
+// came with your tarball or type make ChangeLog if you are building from git
+//
+//========================================================================
+
 #ifndef OUTPUTDEV_H
 #define OUTPUTDEV_H
 
@@ -13,24 +36,31 @@
 #pragma interface
 #endif
 
-#include <poppler-config.h>
+#include "poppler-config.h"
 #include "goo/gtypes.h"
-#include "goo/FixedPoint.h"
 #include "CharTypes.h"
+#include "Object.h"
+#include "PopplerCache.h"
 
+class Annot;
 class Dict;
 class GooHash;
 class GooString;
 class GfxState;
+class Gfx;
 struct GfxColor;
 class GfxColorSpace;
 class GfxImageColorMap;
 class GfxFunctionShading;
 class GfxAxialShading;
+class GfxGouraudTriangleShading;
+class GfxPatchMeshShading;
 class GfxRadialShading;
+class GfxGouraudTriangleShading;
+class GfxPatchMeshShading;
 class Stream;
 class Links;
-class Link;
+class AnnotLink;
 class Catalog;
 class Page;
 class Function;
@@ -43,7 +73,13 @@ class OutputDev {
 public:
 
   // Constructor.
-  OutputDev() { profileHash = NULL; }
+  OutputDev() 
+#ifdef USE_CMS
+ : iccColorSpaceCache(5)
+#endif
+  {
+      profileHash = NULL;
+  }
 
   // Destructor.
   virtual ~OutputDev() {}
@@ -62,10 +98,12 @@ public:
   // operations.
   virtual GBool useTilingPatternFill() { return gFalse; }
 
-  // Does this device use functionShadedFill(), axialShadedFill(), and
-  // radialShadedFill()?  If this returns false, these shaded fills
-  // will be reduced to a series of other drawing operations.
-  virtual GBool useShadedFills() { return gFalse; }
+  // Does this device support specific shading types?
+  // see gouraudTriangleShadedFill() and patchMeshShadedFill()
+  virtual GBool useShadedFills(int type) { return gFalse; }
+
+  // Does this device use FillColorStop()?
+  virtual GBool useFillColorStop() { return gFalse; }
 
   // Does this device use drawForm()?  If this returns false,
   // form-type XObjects will be interpreted (i.e., unrolled).
@@ -78,25 +116,35 @@ public:
   // Does this device need non-text content?
   virtual GBool needNonText() { return gTrue; }
 
+  // Does this device require incCharCount to be called for text on
+  // non-shown layers?
+  virtual GBool needCharCount() { return gFalse; }
+  
+  // Does this device need to clip pages to the crop box even when the
+  // box is the crop box?
+  virtual GBool needClipToCropBox() { return gFalse; }
+
   //----- initialization and control
 
   // Set default transform matrix.
-  virtual void setDefaultCTM(FixedPoint *ctm);
+  virtual void setDefaultCTM(double *ctm);
 
   // Check to see if a page slice should be displayed.  If this
   // returns false, the page display is aborted.  Typically, an
   // OutputDev will use some alternate means to display the page
   // before returning false.
-  virtual GBool checkPageSlice(Page *page, FixedPoint hDPI, FixedPoint vDPI,
+  virtual GBool checkPageSlice(Page *page, double hDPI, double vDPI,
 			       int rotate, GBool useMediaBox, GBool crop,
 			       int sliceX, int sliceY, int sliceW, int sliceH,
-			       GBool printing, Catalog * catalog,
+			       GBool printing,
 			       GBool (* abortCheckCbk)(void *data) = NULL,
-			       void * abortCheckCbkData = NULL)
+			       void * abortCheckCbkData = NULL,
+			       GBool (*annotDisplayDecideCbk)(Annot *annot, void *user_data) = NULL,
+			       void *annotDisplayDecideCbkData = NULL)
     { return gTrue; }
 
   // Start a page.
-  virtual void startPage(int pageNum, GfxState *state) {}
+  virtual void startPage(int pageNum, GfxState *state, XRef *xref) {}
 
   // End a page.
   virtual void endPage() {}
@@ -107,11 +155,11 @@ public:
   //----- coordinate conversion
 
   // Convert between device and user coordinates.
-  virtual void cvtDevToUser(FixedPoint dx, FixedPoint dy, FixedPoint *ux, FixedPoint *uy);
-  virtual void cvtUserToDev(FixedPoint ux, FixedPoint uy, int *dx, int *dy);
+  virtual void cvtDevToUser(double dx, double dy, double *ux, double *uy);
+  virtual void cvtUserToDev(double ux, double uy, int *dx, int *dy);
 
-  FixedPoint *getDefCTM() { return defCTM; }
-  FixedPoint *getDefICTM() { return defICTM; }
+  double *getDefCTM() { return defCTM; }
+  double *getDefICTM() { return defICTM; }
 
   //----- save/restore graphics state
   virtual void saveState(GfxState * /*state*/) {}
@@ -119,8 +167,8 @@ public:
 
   //----- update graphics state
   virtual void updateAll(GfxState *state);
-  virtual void updateCTM(GfxState * /*state*/, FixedPoint /*m11*/, FixedPoint /*m12*/,
-			 FixedPoint /*m21*/, FixedPoint /*m22*/, FixedPoint /*m31*/, FixedPoint /*m32*/) {}
+  virtual void updateCTM(GfxState * /*state*/, double /*m11*/, double /*m12*/,
+			 double /*m21*/, double /*m22*/, double /*m31*/, double /*m32*/) {}
   virtual void updateLineDash(GfxState * /*state*/) {}
   virtual void updateFlatness(GfxState * /*state*/) {}
   virtual void updateLineJoin(GfxState * /*state*/) {}
@@ -139,7 +187,9 @@ public:
   virtual void updateStrokeOpacity(GfxState * /*state*/) {}
   virtual void updateFillOverprint(GfxState * /*state*/) {}
   virtual void updateStrokeOverprint(GfxState * /*state*/) {}
+  virtual void updateOverprintMode(GfxState * /*state*/) {}
   virtual void updateTransfer(GfxState * /*state*/) {}
+  virtual void updateFillColorStop(GfxState * /*state*/, double /*offset*/) {}
 
   //----- update text state
   virtual void updateFont(GfxState * /*state*/) {}
@@ -150,23 +200,34 @@ public:
   virtual void updateWordSpace(GfxState * /*state*/) {}
   virtual void updateHorizScaling(GfxState * /*state*/) {}
   virtual void updateTextPos(GfxState * /*state*/) {}
-  virtual void updateTextShift(GfxState * /*state*/, FixedPoint /*shift*/) {}
+  virtual void updateTextShift(GfxState * /*state*/, double /*shift*/) {}
+  virtual void saveTextPos(GfxState * /*state*/) {}
+  virtual void restoreTextPos(GfxState * /*state*/) {}
 
   //----- path painting
   virtual void stroke(GfxState * /*state*/) {}
   virtual void fill(GfxState * /*state*/) {}
   virtual void eoFill(GfxState * /*state*/) {}
-  virtual void tilingPatternFill(GfxState * /*state*/, Object * /*str*/,
-				 int /*paintType*/, Dict * /*resDict*/,
-				 FixedPoint * /*mat*/, FixedPoint * /*bbox*/,
-				 int /*x0*/, int /*y0*/, int /*x1*/, int /*y1*/,
-				 FixedPoint /*xStep*/, FixedPoint /*yStep*/) {}
+  virtual GBool tilingPatternFill(GfxState * /*state*/, Gfx * /*gfx*/, Catalog * /*cat*/, Object * /*str*/,
+				  double * /*pmat*/, int /*paintType*/, int /*tilingType*/, Dict * /*resDict*/,
+				  double * /*mat*/, double * /*bbox*/,
+				  int /*x0*/, int /*y0*/, int /*x1*/, int /*y1*/,
+				  double /*xStep*/, double /*yStep*/)
+    { return gFalse; }
   virtual GBool functionShadedFill(GfxState * /*state*/,
 				   GfxFunctionShading * /*shading*/)
     { return gFalse; }
-  virtual GBool axialShadedFill(GfxState * /*state*/, GfxAxialShading * /*shading*/)
+  virtual GBool axialShadedFill(GfxState * /*state*/, GfxAxialShading * /*shading*/, double /*tMin*/, double /*tMax*/)
     { return gFalse; }
-  virtual GBool radialShadedFill(GfxState * /*state*/, GfxRadialShading * /*shading*/)
+  virtual GBool axialShadedSupportExtend(GfxState * /*state*/, GfxAxialShading * /*shading*/)
+    { return gFalse; }
+  virtual GBool radialShadedFill(GfxState * /*state*/, GfxRadialShading * /*shading*/, double /*sMin*/, double /*sMax*/)
+    { return gFalse; }
+  virtual GBool radialShadedSupportExtend(GfxState * /*state*/, GfxRadialShading * /*shading*/)
+    { return gFalse; }
+  virtual GBool gouraudTriangleShadedFill(GfxState *state, GfxGouraudTriangleShading *shading)
+    { return gFalse; }
+  virtual GBool patchMeshShadedFill(GfxState *state, GfxPatchMeshShading *shading)
     { return gFalse; }
 
   //----- path clipping
@@ -179,45 +240,55 @@ public:
   virtual void endStringOp(GfxState * /*state*/) {}
   virtual void beginString(GfxState * /*state*/, GooString * /*s*/) {}
   virtual void endString(GfxState * /*state*/) {}
-  virtual void drawChar(GfxState * /*state*/, FixedPoint /*x*/, FixedPoint /*y*/,
-			FixedPoint /*dx*/, FixedPoint /*dy*/,
-			FixedPoint /*originX*/, FixedPoint /*originY*/,
+  virtual void drawChar(GfxState * /*state*/, double /*x*/, double /*y*/,
+			double /*dx*/, double /*dy*/,
+			double /*originX*/, double /*originY*/,
 			CharCode /*code*/, int /*nBytes*/, Unicode * /*u*/, int /*uLen*/) {}
   virtual void drawString(GfxState * /*state*/, GooString * /*s*/) {}
-  virtual GBool beginType3Char(GfxState * /*state*/, FixedPoint /*x*/, FixedPoint /*y*/,
-			       FixedPoint /*dx*/, FixedPoint /*dy*/,
+  virtual GBool beginType3Char(GfxState * /*state*/, double /*x*/, double /*y*/,
+			       double /*dx*/, double /*dy*/,
 			       CharCode /*code*/, Unicode * /*u*/, int /*uLen*/);
   virtual void endType3Char(GfxState * /*state*/) {}
+  virtual void beginTextObject(GfxState * /*state*/) {}
   virtual void endTextObject(GfxState * /*state*/) {}
+  virtual void incCharCount(int /*nChars*/) {}
+  virtual void beginActualText(GfxState * /*state*/, GooString * /*text*/ ) {}
+  virtual void endActualText(GfxState * /*state*/) {}
 
   //----- image drawing
   virtual void drawImageMask(GfxState *state, Object *ref, Stream *str,
-			     int width, int height, GBool invert,
+			     int width, int height, GBool invert, GBool interpolate,
 			     GBool inlineImg);
+  virtual void setSoftMaskFromImageMask(GfxState *state,
+					Object *ref, Stream *str,
+					int width, int height, GBool invert,
+					GBool inlineImg, double *baseMatrix);
+  virtual void unsetSoftMaskFromImageMask(GfxState *state, double *baseMatrix);
   virtual void drawImage(GfxState *state, Object *ref, Stream *str,
 			 int width, int height, GfxImageColorMap *colorMap,
-			 int *maskColors, GBool inlineImg);
+			 GBool interpolate, int *maskColors, GBool inlineImg);
   virtual void drawMaskedImage(GfxState *state, Object *ref, Stream *str,
 			       int width, int height,
-			       GfxImageColorMap *colorMap,
+			       GfxImageColorMap *colorMap, GBool interpolate,
 			       Stream *maskStr, int maskWidth, int maskHeight,
-			       GBool maskInvert);
+			       GBool maskInvert, GBool maskInterpolate);
   virtual void drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str,
 				   int width, int height,
 				   GfxImageColorMap *colorMap,
+				   GBool interpolate,
 				   Stream *maskStr,
 				   int maskWidth, int maskHeight,
-				   GfxImageColorMap *maskColorMap);
+				   GfxImageColorMap *maskColorMap,
+				   GBool maskInterpolate);
 
   //----- grouping operators
 
   virtual void endMarkedContent(GfxState *state);
-  virtual void beginMarkedContent(char *name);
   virtual void beginMarkedContent(char *name, Dict *properties);
   virtual void markPoint(char *name);
   virtual void markPoint(char *name, Dict *properties);
-  
-  
+
+
 
 #if OPI_SUPPORT
   //----- OPI functions
@@ -226,9 +297,9 @@ public:
 #endif
 
   //----- Type 3 font operators
-  virtual void type3D0(GfxState * /*state*/, FixedPoint /*wx*/, FixedPoint /*wy*/) {}
-  virtual void type3D1(GfxState * /*state*/, FixedPoint /*wx*/, FixedPoint /*wy*/,
-		       FixedPoint /*llx*/, FixedPoint /*lly*/, FixedPoint /*urx*/, FixedPoint /*ury*/) {}
+  virtual void type3D0(GfxState * /*state*/, double /*wx*/, double /*wy*/) {}
+  virtual void type3D1(GfxState * /*state*/, double /*wx*/, double /*wy*/,
+		       double /*llx*/, double /*lly*/, double /*urx*/, double /*ury*/) {}
 
   //----- form XObjects
   virtual void drawForm(Ref /*id*/) {}
@@ -242,29 +313,38 @@ public:
   virtual GooHash *endProfile();
 
   //----- transparency groups and soft masks
-  virtual void beginTransparencyGroup(GfxState * /*state*/, FixedPoint * /*bbox*/,
+  virtual GBool checkTransparencyGroup(GfxState * /*state*/, GBool /*knockout*/) { return gTrue; }
+  virtual void beginTransparencyGroup(GfxState * /*state*/, double * /*bbox*/,
 				      GfxColorSpace * /*blendingColorSpace*/,
 				      GBool /*isolated*/, GBool /*knockout*/,
 				      GBool /*forSoftMask*/) {}
   virtual void endTransparencyGroup(GfxState * /*state*/) {}
-  virtual void paintTransparencyGroup(GfxState * /*state*/, FixedPoint * /*bbox*/) {}
-  virtual void setSoftMask(GfxState * /*state*/, FixedPoint * /*bbox*/, GBool /*alpha*/,
+  virtual void paintTransparencyGroup(GfxState * /*state*/, double * /*bbox*/) {}
+  virtual void setSoftMask(GfxState * /*state*/, double * /*bbox*/, GBool /*alpha*/,
 			   Function * /*transferFunc*/, GfxColor * /*backdropColor*/) {}
   virtual void clearSoftMask(GfxState * /*state*/) {}
 
   //----- links
-  virtual void processLink(Link * /*link*/, Catalog * /*catalog*/) {}
+  virtual void processLink(AnnotLink * /*link*/) {}
 
 #if 1 //~tmp: turn off anti-aliasing temporarily
   virtual GBool getVectorAntialias() { return gFalse; }
   virtual void setVectorAntialias(GBool /*vaa*/) {}
 #endif
 
+#ifdef USE_CMS
+  PopplerCache *getIccColorSpaceCache();
+#endif
+
 private:
 
-  FixedPoint defCTM[6];		// default coordinate transform matrix
-  FixedPoint defICTM[6];		// inverse of default CTM
+  double defCTM[6];		// default coordinate transform matrix
+  double defICTM[6];		// inverse of default CTM
   GooHash *profileHash;
+
+#ifdef USE_CMS
+  PopplerCache iccColorSpaceCache;
+#endif
 };
 
 #endif

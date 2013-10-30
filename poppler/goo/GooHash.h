@@ -6,6 +6,20 @@
 //
 //========================================================================
 
+//========================================================================
+//
+// Modified under the Poppler project - http://poppler.freedesktop.org
+//
+// All changes made under the Poppler project to this file are licensed
+// under GPL version 2 or later
+//
+// Copyright (C) 2012 Albert Astals Cid <aacid@kde.org>
+//
+// To see a description of the changes please see the Changelog file that
+// came with your tarball or type make ChangeLog if you are building from git
+//
+//========================================================================
+
 #ifndef GHASH_H
 #define GHASH_H
 
@@ -32,11 +46,11 @@ public:
   void replace(GooString *key, int val);
   void *lookup(GooString *key);
   int lookupInt(GooString *key);
-  void *lookup(char *key);
-  int lookupInt(char *key);
+  void *lookup(const char *key);
+  int lookupInt(const char *key);
   void *remove(GooString *key);
   int removeInt(GooString *key);
-  void *remove(char *key);
+  void *remove(const char *key);
   int removeInt(const char *key);
   int getLength() { return len; }
   void startIter(GooHashIter **iter);
@@ -45,6 +59,8 @@ public:
   void killIter(GooHashIter **iter);
 
 private:
+  GooHash(const GooHash &other);
+  GooHash& operator=(const GooHash &other);
 
   void expand();
   GooHashBucket *find(GooString *key, int *h);

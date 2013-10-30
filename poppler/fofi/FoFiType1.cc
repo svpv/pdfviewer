@@ -6,6 +6,22 @@
 //
 //========================================================================
 
+//========================================================================
+//
+// Modified under the Poppler project - http://poppler.freedesktop.org
+//
+// All changes made under the Poppler project to this file are licensed
+// under GPL version 2 or later
+//
+// Copyright (C) 2005, 2008, 2010 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2005 Kristian Høgsberg <krh@redhat.com>
+// Copyright (C) 2010 Jakub Wilk <ubanus@users.sf.net>
+//
+// To see a description of the changes please see the Changelog file that
+// came with your tarball or type make ChangeLog if you are building from git
+//
+//========================================================================
+
 #include <config.h>
 
 #ifdef USE_GCC_PRAGMAS
@@ -15,8 +31,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include "goo/gmem.h"
+#include "goo/GooLikely.h"
 #include "FoFiEncodings.h"
 #include "FoFiType1.h"
+#include "poppler/Error.h"
 
 //------------------------------------------------------------------------
 // FoFiType1
@@ -41,7 +59,14 @@ FoFiType1::FoFiType1(char *fileA, int lenA, GBool freeFileDataA):
 {
   name = NULL;
   encoding = NULL;
+  fontMatrix[0] = 0.001;
+  fontMatrix[1] = 0;
+  fontMatrix[2] = 0;
+  fontMatrix[3] = 0.001;
+  fontMatrix[4] = 0;
+  fontMatrix[5] = 0;
   parsed = gFalse;
+  undoPFB();
 }
 
 FoFiType1::~FoFiType1() {
@@ -72,7 +97,18 @@ char **FoFiType1::getEncoding() {
   return encoding;
 }
 
-void FoFiType1::writeEncoded(char **newEncoding,
+void FoFiType1::getFontMatrix(double *mat) {
+  int i;
+
+  if (!parsed) {
+    parse();
+  }
+  for (i = 0; i < 6; ++i) {
+    mat[i] = fontMatrix[i];
+  }
+}
+
+void FoFiType1::writeEncoded(const char **newEncoding,
 			     FoFiOutputFunc outputFunc, void *outputStream) {
   char buf[512];
   char *line, *line2, *p;
@@ -175,8 +211,11 @@ void FoFiType1::parse() {
   char *line, *line1, *p, *p2;
   char buf[256];
   char c;
-  int n, code, i, j;
+  int n, code, base, i, j;
+  char *tokptr;
+  GBool gotMatrix;
 
+  gotMatrix = gFalse;
   for (i = 1, line = (char *)file;
        i <= 100 && line && (!name || !encoding);
        ++i) {
@@ -186,7 +225,7 @@ void FoFiType1::parse() {
       strncpy(buf, line, 255);
       buf[255] = '\0';
       if ((p = strchr(buf+9, '/')) &&
-	  (p = strtok(p+1, " \t\n\r"))) {
+	  (p = strtok_r(p+1, " \t\n\r", &tokptr))) {
 	name = copyString(p);
       }
       line = getNextLine(line);
@@ -194,7 +233,7 @@ void FoFiType1::parse() {
     // get encoding
     } else if (!encoding &&
 	       !strncmp(line, "/Encoding StandardEncoding def", 30)) {
-	  encoding = (char **) fofiType1StandardEncoding;
+      encoding = (char **)fofiType1StandardEncoding;
     } else if (!encoding &&
 	       !strncmp(line, "/Encoding 256 array", 19)) {
       encoding = (char **)gmallocn(256, sizeof(char *));
@@ -204,44 +243,76 @@ void FoFiType1::parse() {
       for (j = 0, line = getNextLine(line);
 	   j < 300 && line && (line1 = getNextLine(line));
 	   ++j, line = line1) {
-	if ((n = line1 - line) > 255) {
+        if ((n = (int)(line1 - line)) > 255) {
+	  error(errSyntaxWarning, -1, "FoFiType1::parse a line has more than 255 characters, we don't support this");
 	  n = 255;
 	}
 	strncpy(buf, line, n);
 	buf[n] = '\0';
 	for (p = buf; *p == ' ' || *p == '\t'; ++p) ;
 	if (!strncmp(p, "dup", 3)) {
-	  for (p += 3; *p == ' ' || *p == '\t'; ++p) ;
-	  for (p2 = p; *p2 >= '0' && *p2 <= '9'; ++p2) ;
-	  if (*p2) {
-	    c = *p2;
-	    *p2 = '\0';
-	    code = atoi(p);
-	    *p2 = c;
-	    if (code == 8 && *p2 == '#') {
-	      code = 0;
-	      for (++p2; *p2 >= '0' && *p2 <= '7'; ++p2) {
-		code = code * 8 + (*p2 - '0');
-	      }
+	  while (1) {
+	    p += 3;
+	    for (; *p == ' ' || *p == '\t'; ++p) ;
+	    code = 0;
+	    if (*p == '8' && p[1] == '#') {
+	      base = 8;
+	      p += 2;
+	    } else if (*p >= '0' && *p <= '9') {
+	      base = 10;
+	    } else {
+	      break;
 	    }
-	    if (code < 256) {
-	      for (p = p2; *p == ' ' || *p == '\t'; ++p) ;
-	      if (*p == '/') {
-		++p;
-		for (p2 = p; *p2 && *p2 != ' ' && *p2 != '\t'; ++p2) ;
-		*p2 = '\0';
-		encoding[code] = copyString(p);
-	      }
+	    for (; *p >= '0' && *p < '0' + base; ++p) {
+	      code = code * base + (*p - '0');
+	    }
+	    for (; *p == ' ' || *p == '\t'; ++p) ;
+	    if (*p != '/') {
+	      break;
+	    }
+	    ++p;
+	    for (p2 = p; *p2 && *p2 != ' ' && *p2 != '\t'; ++p2) ;
+	    if (code >= 0 && code < 256) {
+	      c = *p2;
+	      *p2 = '\0';
+	      encoding[code] = copyString(p);
+	      *p2 = c;
+	    }
+	    for (p = p2; *p == ' ' || *p == '\t'; ++p) ;
+	    if (strncmp(p, "put", 3)) {
+	      break;
+	    }
+	    for (p += 3; *p == ' ' || *p == '\t'; ++p) ;
+	    if (strncmp(p, "dup", 3)) {
+	      break;
 	    }
 	  }
 	} else {
-	  if (strtok(buf, " \t") &&
-	      (p = strtok(NULL, " \t\n\r")) && !strcmp(p, "def")) {
+	  if (strtok_r(buf, " \t", &tokptr) &&
+	      (p = strtok_r(NULL, " \t\n\r", &tokptr)) && !strcmp(p, "def")) {
 	    break;
 	  }
 	}
       }
       //~ check for getinterval/putinterval junk
+
+    } else if (!gotMatrix && !strncmp(line, "/FontMatrix", 11)) {
+      strncpy(buf, line + 11, 255);
+      buf[255] = '\0';
+      if ((p = strchr(buf, '['))) {
+	++p;
+	if ((p2 = strchr(p, ']'))) {
+	  *p2 = '\0';
+	  for (j = 0; j < 6; ++j) {
+	    if ((p = strtok(j == 0 ? p : (char *)NULL, " \t\n\r"))) {
+	      fontMatrix[j] = atof(p);
+	    } else {
+	      break;
+	    }
+	  }
+	}
+      }
+      gotMatrix = gTrue;
 
     } else {
       line = getNextLine(line);
@@ -249,4 +320,39 @@ void FoFiType1::parse() {
   }
 
   parsed = gTrue;
+}
+
+// Undo the PFB encoding, i.e., remove the PFB headers.
+void FoFiType1::undoPFB() {
+  GBool ok;
+  Guchar *file2;
+  int pos1, pos2, type;
+  Guint segLen;
+
+  ok = gTrue;
+  if (getU8(0, &ok) != 0x80 || !ok) {
+    return;
+  }
+  file2 = (Guchar *)gmalloc(len);
+  pos1 = pos2 = 0;
+  while (getU8(pos1, &ok) == 0x80 && ok) {
+    type = getU8(pos1 + 1, &ok);
+    if (type < 1 || type > 2 || !ok) {
+      break;
+    }
+    segLen = getU32LE(pos1 + 2, &ok);
+    pos1 += 6;
+    if (!ok || !checkRegion(pos1, segLen)) {
+      break;
+    }
+    memcpy(file2 + pos2, file + pos1, segLen);
+    pos1 += segLen;
+    pos2 += segLen;
+  }
+  if (freeFileData) {
+    gfree(fileData);
+  }
+  file = fileData = file2;
+  freeFileData = gTrue;
+  len = pos2;
 }

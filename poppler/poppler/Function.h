@@ -6,6 +6,24 @@
 //
 //========================================================================
 
+//========================================================================
+//
+// Modified under the Poppler project - http://poppler.freedesktop.org
+//
+// All changes made under the Poppler project to this file are licensed
+// under GPL version 2 or later
+//
+// Copyright (C) 2009, 2010 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2010 Christian Feuersänger <cfeuersaenger@googlemail.com>
+// Copyright (C) 2011 Andrea Canciani <ranma42@gmail.com>
+// Copyright (C) 2012 Thomas Freitag <Thomas.Freitag@alfa.de>
+// Copyright (C) 2012 Adam Reichold <adamreichold@myopera.com>
+//
+// To see a description of the changes please see the Changelog file that
+// came with your tarball or type make ChangeLog if you are building from git
+//
+//========================================================================
+
 #ifndef FUNCTION_H
 #define FUNCTION_H
 
@@ -15,11 +33,13 @@
 
 #include "goo/gtypes.h"
 #include "Object.h"
+#include <set>
 
 class Dict;
 class Stream;
 struct PSObject;
 class PSStack;
+class PopplerCache;
 
 //------------------------------------------------------------------------
 // Function
@@ -56,23 +76,27 @@ public:
   int getInputSize() { return m; }
   int getOutputSize() { return n; }
 
-  FixedPoint getDomainMin(int i) { return domain[i][0]; }
-  FixedPoint getDomainMax(int i) { return domain[i][1]; }
-  FixedPoint getRangeMin(int i) { return range[i][0]; }
-  FixedPoint getRangeMax(int i) { return range[i][1]; }
+  double getDomainMin(int i) { return domain[i][0]; }
+  double getDomainMax(int i) { return domain[i][1]; }
+  double getRangeMin(int i) { return range[i][0]; }
+  double getRangeMax(int i) { return range[i][1]; }
   GBool getHasRange() { return hasRange; }
+  virtual GBool hasDifferentResultSet(Function *func) { return gFalse; }
 
   // Transform an input tuple into an output tuple.
-  virtual void transform(FixedPoint *in, FixedPoint *out) = 0;
+  virtual void transform(double *in, double *out) = 0;
 
   virtual GBool isOk() = 0;
 
 protected:
+  static Function *parse(Object *funcObj, std::set<int> *usedParents);
+
+  Function(const Function *func);
 
   int m, n;			// size of input and output tuples
-  FixedPoint			// min and max values for function domain
+  double			// min and max values for function domain
     domain[funcMaxInputs][2];
-  FixedPoint			// min and max values for function range
+  double			// min and max values for function range
     range[funcMaxOutputs][2];
   GBool hasRange;		// set if range is defined
 };
@@ -88,7 +112,7 @@ public:
   virtual ~IdentityFunction();
   virtual Function *copy() { return new IdentityFunction(); }
   virtual int getType() { return -1; }
-  virtual void transform(FixedPoint *in, FixedPoint *out);
+  virtual void transform(double *in, double *out);
   virtual GBool isOk() { return gTrue; }
 
 private:
@@ -105,32 +129,36 @@ public:
   virtual ~SampledFunction();
   virtual Function *copy() { return new SampledFunction(this); }
   virtual int getType() { return 0; }
-  virtual void transform(FixedPoint *in, FixedPoint *out);
+  virtual void transform(double *in, double *out);
   virtual GBool isOk() { return ok; }
+  virtual GBool hasDifferentResultSet(Function *func);
 
   int getSampleSize(int i) { return sampleSize[i]; }
-  FixedPoint getEncodeMin(int i) { return encode[i][0]; }
-  FixedPoint getEncodeMax(int i) { return encode[i][1]; }
-  FixedPoint getDecodeMin(int i) { return decode[i][0]; }
-  FixedPoint getDecodeMax(int i) { return decode[i][1]; }
-  FixedPoint *getSamples() { return samples; }
+  double getEncodeMin(int i) { return encode[i][0]; }
+  double getEncodeMax(int i) { return encode[i][1]; }
+  double getDecodeMin(int i) { return decode[i][0]; }
+  double getDecodeMax(int i) { return decode[i][1]; }
+  double *getSamples() { return samples; }
+  int getSampleNumber() { return nSamples; }
 
 private:
 
-  SampledFunction(SampledFunction *func);
+  SampledFunction(const SampledFunction *func);
 
   int				// number of samples for each domain element
     sampleSize[funcMaxInputs];
-  FixedPoint			// min and max values for domain encoder
+  double			// min and max values for domain encoder
     encode[funcMaxInputs][2];
-  FixedPoint			// min and max values for range decoder
+  double			// min and max values for range decoder
     decode[funcMaxOutputs][2];
-  FixedPoint			// input multipliers
+  double			// input multipliers
     inputMul[funcMaxInputs];
-  int idxMul[funcMaxInputs];	// sample array index multipliers
-  FixedPoint *samples;		// the samples
+  int *idxOffset;
+  double *samples;		// the samples
   int nSamples;			// size of the samples array
-  FixedPoint *sBuf;			// buffer for the transform function
+  double *sBuf;			// buffer for the transform function
+  double cacheIn[funcMaxInputs];
+  double cacheOut[funcMaxOutputs];
   GBool ok;
 };
 
@@ -145,20 +173,21 @@ public:
   virtual ~ExponentialFunction();
   virtual Function *copy() { return new ExponentialFunction(this); }
   virtual int getType() { return 2; }
-  virtual void transform(FixedPoint *in, FixedPoint *out);
+  virtual void transform(double *in, double *out);
   virtual GBool isOk() { return ok; }
 
-  FixedPoint *getC0() { return c0; }
-  FixedPoint *getC1() { return c1; }
-  FixedPoint getE() { return e; }
+  double *getC0() { return c0; }
+  double *getC1() { return c1; }
+  double getE() { return e; }
 
 private:
 
-  ExponentialFunction(ExponentialFunction *func);
+  ExponentialFunction(const ExponentialFunction *func);
 
-  FixedPoint c0[funcMaxOutputs];
-  FixedPoint c1[funcMaxOutputs];
-  FixedPoint e;
+  double c0[funcMaxOutputs];
+  double c1[funcMaxOutputs];
+  double e;
+  bool isLinear;
   GBool ok;
 };
 
@@ -169,28 +198,28 @@ private:
 class StitchingFunction: public Function {
 public:
 
-  StitchingFunction(Object *funcObj, Dict *dict);
+  StitchingFunction(Object *funcObj, Dict *dict, std::set<int> *usedParents);
   virtual ~StitchingFunction();
   virtual Function *copy() { return new StitchingFunction(this); }
   virtual int getType() { return 3; }
-  virtual void transform(FixedPoint *in, FixedPoint *out);
+  virtual void transform(double *in, double *out);
   virtual GBool isOk() { return ok; }
 
   int getNumFuncs() { return k; }
   Function *getFunc(int i) { return funcs[i]; }
-  FixedPoint *getBounds() { return bounds; }
-  FixedPoint *getEncode() { return encode; }
-  FixedPoint *getScale() { return scale; }
+  double *getBounds() { return bounds; }
+  double *getEncode() { return encode; }
+  double *getScale() { return scale; }
 
 private:
 
-  StitchingFunction(StitchingFunction *func);
+  StitchingFunction(const StitchingFunction *func);
 
   int k;
   Function **funcs;
-  FixedPoint *bounds;
-  FixedPoint *encode;
-  FixedPoint *scale;
+  double *bounds;
+  double *encode;
+  double *scale;
   GBool ok;
 };
 
@@ -205,14 +234,14 @@ public:
   virtual ~PostScriptFunction();
   virtual Function *copy() { return new PostScriptFunction(this); }
   virtual int getType() { return 4; }
-  virtual void transform(FixedPoint *in, FixedPoint *out);
+  virtual void transform(double *in, double *out);
   virtual GBool isOk() { return ok; }
 
   GooString *getCodeString() { return codeString; }
 
 private:
 
-  PostScriptFunction(PostScriptFunction *func);
+  PostScriptFunction(const PostScriptFunction *func);
   GBool parseCode(Stream *str, int *codePtr);
   GooString *getToken(Stream *str);
   void resizeCode(int newSize);
@@ -221,6 +250,8 @@ private:
   GooString *codeString;
   PSObject *code;
   int codeSize;
+  double cacheIn[funcMaxInputs];
+  double cacheOut[funcMaxOutputs];
   GBool ok;
 };
 

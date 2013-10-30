@@ -6,6 +6,28 @@
 //
 //========================================================================
 
+//========================================================================
+//
+// Modified under the Poppler project - http://poppler.freedesktop.org
+//
+// All changes made under the Poppler project to this file are licensed
+// under GPL version 2 or later
+//
+// Copyright (C) 2005 Jonathan Blandford <jrb@redhat.com>
+// Copyright (C) 2007 Iñigo Martínez <inigomartinez@gmail.com>
+// Copyright (C) 2008 Brad Hards <bradh@kde.org>
+// Copyright (C) 2008, 2010 Carlos Garcia Campos <carlosgc@gnome.org>
+// Copyright (C) 2009-2013 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2009, 2010, 2012, 2013 Thomas Freitag <Thomas.Freitag@alfa.de>
+// Copyright (C) 2010 David Benjamin <davidben@mit.edu>
+// Copyright (C) 2010 Christian Feuersänger <cfeuersaenger@googlemail.com>
+// Copyright (C) 2013 Fabio D'Urso <fabiodurso@hotmail.it>
+//
+// To see a description of the changes please see the Changelog file that
+// came with your tarball or type make ChangeLog if you are building from git
+//
+//========================================================================
+
 #ifndef GFX_H
 #define GFX_H
 
@@ -13,12 +35,17 @@
 #pragma interface
 #endif
 
+#include "poppler-config.h"
 #include "goo/gtypes.h"
 #include "goo/GooList.h"
-#include "goo/FixedPoint.h"
+#include "GfxState.h"
 #include "Object.h"
+#include "PopplerCache.h"
+
+#include <vector>
 
 class GooString;
+class PDFDoc;
 class XRef;
 class Array;
 class Stream;
@@ -46,6 +73,7 @@ class PDFRectangle;
 class AnnotBorder;
 class AnnotColor;
 class Catalog;
+struct MarkedContentStack;
 
 //------------------------------------------------------------------------
 
@@ -88,10 +116,11 @@ public:
   GBool lookupXObject(char *name, Object *obj);
   GBool lookupXObjectNF(char *name, Object *obj);
   GBool lookupMarkedContentNF(char *name, Object *obj);
-  void lookupColorSpace(char *name, Object *obj);
-  GfxPattern *lookupPattern(char *name);
-  GfxShading *lookupShading(char *name);
+  void lookupColorSpace(const char *name, Object *obj);
+  GfxPattern *lookupPattern(char *name, OutputDev *out);
+  GfxShading *lookupShading(char *name, OutputDev *out);
   GBool lookupGState(char *name, Object *obj);
+  GBool lookupGStateNF(char *name, Object *obj);
 
   GfxResources *getNext() { return next; }
 
@@ -103,6 +132,7 @@ private:
   Object patternDict;
   Object shadingDict;
   Object gStateDict;
+  PopplerObjectCache gStateCache;
   Object propertiesDict;
   GfxResources *next;
 };
@@ -115,19 +145,21 @@ class Gfx {
 public:
 
   // Constructor for regular output.
-  Gfx(XRef *xrefA, OutputDev *outA, int pageNum, Dict *resDict, Catalog *catalog,
+  Gfx(PDFDoc *docA, OutputDev *outA, int pageNum, Dict *resDict,
       double hDPI, double vDPI, PDFRectangle *box,
       PDFRectangle *cropBox, int rotate,
       GBool (*abortCheckCbkA)(void *data) = NULL,
-      void *abortCheckCbkDataA = NULL);
+      void *abortCheckCbkDataA = NULL, XRef *xrefA = NULL);
 
   // Constructor for a sub-page object.
-  Gfx(XRef *xrefA, OutputDev *outA, Dict *resDict, Catalog *catalog,
+  Gfx(PDFDoc *docA, OutputDev *outA, Dict *resDict,
       PDFRectangle *box, PDFRectangle *cropBox,
       GBool (*abortCheckCbkA)(void *data) = NULL,
-      void *abortCheckCbkDataA = NULL);
+      void *abortCheckCbkDataA = NULL, XRef *xrefA = NULL);
 
   ~Gfx();
+
+  XRef *getXRef() { return xref; }
 
   // Interpret a stream or array of streams.
   void display(Object *obj, GBool topLevel = gTrue);
@@ -135,40 +167,65 @@ public:
   // Display an annotation, given its appearance (a Form XObject),
   // border style, and bounding box (in default user space).
   void drawAnnot(Object *str, AnnotBorder *border, AnnotColor *aColor,
-		 FixedPoint xMin, FixedPoint yMin, FixedPoint xMax, FixedPoint yMax);
+		 double xMin, double yMin, double xMax, double yMax, int rotate);
 
   // Save graphics state.
   void saveState();
 
+  // Push a new state guard
+  void pushStateGuard();
+
   // Restore graphics state.
   void restoreState();
+
+  // Pop to state guard and pop guard
+  void popStateGuard();
 
   // Get the current graphics state object.
   GfxState *getState() { return state; }
 
+  GBool checkTransparencyGroup(Dict *resDict);
+
+  void drawForm(Object *str, Dict *resDict, double *matrix, double *bbox,
+	       GBool transpGroup = gFalse, GBool softMask = gFalse,
+	       GfxColorSpace *blendingColorSpace = NULL,
+	       GBool isolated = gFalse, GBool knockout = gFalse,
+	       GBool alpha = gFalse, Function *transferFunc = NULL,
+	       GfxColor *backdropColor = NULL);
+
+  void pushResources(Dict *resDict);
+  void popResources();
+
 private:
 
+  PDFDoc *doc;
   XRef *xref;			// the xref table for this PDF file
   Catalog *catalog;		// the Catalog for this PDF file  
   OutputDev *out;		// output device
   GBool subPage;		// is this a sub-page object?
   GBool printCommands;		// print the drawing commands (for debugging)
   GBool profileCommands;	// profile the drawing commands (for debugging)
+  GBool commandAborted;         // did the previous command abort the drawing?
   GfxResources *res;		// resource stack
   int updateLevel;
-  GBool ocSuppressed;		// are we ignoring content based on OptionalContent?
 
   GfxState *state;		// current graphics state
+  int stackHeight;		// the height of the current graphics stack
+  std::vector<int> stateGuards;   // a stack of state limits; to guard against unmatched pops
   GBool fontChanged;		// set if font or text matrix has changed
   GfxClipType clip;		// do a clip?
   int ignoreUndef;		// current BX/EX nesting level
-  FixedPoint baseMatrix[6];		// default matrix for most recent
+  double baseMatrix[6];		// default matrix for most recent
 				//   page/form/pattern
   int formDepth;
+  GBool ocState;		// true if drawing is enabled, false if
+				//   disabled
 
-  GooList *markedContentStack;	// current BMC/EMC stack
+  MarkedContentStack *mcStack;	// current BMC/EMC stack
 
   Parser *parser;		// parser for page content stream(s)
+  
+  std::set<int> formsDrawing;	// the forms that are being drawn
 
   GBool				// callback to check for an abort
     (*abortCheckCbk)(void *data);
@@ -180,7 +237,9 @@ private:
   void execOp(Object *cmd, Object args[], int numArgs);
   Operator *findOp(char *name);
   GBool checkArg(Object *arg, TchkType type);
-  int getPos();
+  Goffset getPos();
+
+  int bottomGuard();
 
   // graphics state operators
   void opSave(Object args[], int numArgs);
@@ -234,25 +293,32 @@ private:
   void opCloseEOFillStroke(Object args[], int numArgs);
   void doPatternFill(GBool eoFill);
   void doPatternStroke();
+  void doPatternText();
+  void doPatternImageMask(Object *ref, Stream *str, int width, int height,
+			  GBool invert, GBool inlineImg);
   void doTilingPatternFill(GfxTilingPattern *tPat,
-			   GBool stroke, GBool eoFill);
+			   GBool stroke, GBool eoFill, GBool text);
   void doShadingPatternFill(GfxShadingPattern *sPat,
-			    GBool stroke, GBool eoFill);
+			    GBool stroke, GBool eoFill, GBool text);
   void opShFill(Object args[], int numArgs);
   void doFunctionShFill(GfxFunctionShading *shading);
   void doFunctionShFill1(GfxFunctionShading *shading,
-			 FixedPoint x0, FixedPoint y0,
-			 FixedPoint x1, FixedPoint y1,
+			 double x0, double y0,
+			 double x1, double y1,
 			 GfxColor *colors, int depth);
   void doAxialShFill(GfxAxialShading *shading);
   void doRadialShFill(GfxRadialShading *shading);
   void doGouraudTriangleShFill(GfxGouraudTriangleShading *shading);
-  void gouraudFillTriangle(FixedPoint x0, FixedPoint y0, GfxColor *color0,
-			   FixedPoint x1, FixedPoint y1, GfxColor *color1,
-			   FixedPoint x2, FixedPoint y2, GfxColor *color2,
-			   int nComps, int depth);
+  void gouraudFillTriangle(double x0, double y0, GfxColor *color0,
+			   double x1, double y1, GfxColor *color1,
+			   double x2, double y2, GfxColor *color2,
+			   int nComps, int depth, GfxState::ReusablePathIterator *path);
+  void gouraudFillTriangle(double x0, double y0, double color0,
+			   double x1, double y1, double color1,
+			   double x2, double y2, double color2,
+			   double refineColorThreshold, int depth, GfxGouraudTriangleShading *shading, GfxState::ReusablePathIterator *path);
   void doPatchMeshShFill(GfxPatchMeshShading *shading);
-  void fillPatch(GfxPatch *patch, int nComps, int depth);
+  void fillPatch(GfxPatch *patch, int colorComps, int patchColorComps, double refineColorThreshold, int depth, GfxPatchMeshShading *shading);
   void doEndPath();
 
   // path clipping operators
@@ -284,17 +350,12 @@ private:
   void opMoveSetShowText(Object args[], int numArgs);
   void opShowSpaceText(Object args[], int numArgs);
   void doShowText(GooString *s);
+  void doIncCharCount(GooString *s);
 
   // XObject operators
   void opXObject(Object args[], int numArgs);
   void doImage(Object *ref, Stream *str, GBool inlineImg);
   void doForm(Object *str);
-  void doForm1(Object *str, Dict *resDict, FixedPoint *matrix, FixedPoint *bbox,
-	       GBool transpGroup = gFalse, GBool softMask = gFalse,
-	       GfxColorSpace *blendingColorSpace = NULL,
-	       GBool isolated = gFalse, GBool knockout = gFalse,
-	       GBool alpha = gFalse, Function *transferFunc = NULL,
-	       GfxColor *backdropColor = NULL);
 
   // in-line image operators
   void opBeginImage(Object args[], int numArgs);
@@ -314,9 +375,11 @@ private:
   void opBeginMarkedContent(Object args[], int numArgs);
   void opEndMarkedContent(Object args[], int numArgs);
   void opMarkPoint(Object args[], int numArgs);
-
-  void pushResources(Dict *resDict);
-  void popResources();
+  GfxState *saveStateStack();
+  void restoreStateStack(GfxState *oldState);
+  GBool contentIsHidden();
+  void pushMarkedContent();
+  void popMarkedContent();
 };
 
 #endif

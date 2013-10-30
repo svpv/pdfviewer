@@ -89,7 +89,7 @@ void NameToCharCode::add(const char *name, CharCode c) {
   ++len;
 }
 
-CharCode NameToCharCode::lookup(char *name) {
+CharCode NameToCharCode::lookup(const char *name) {
   int h;
 
   h = hash(name);
@@ -105,11 +105,11 @@ CharCode NameToCharCode::lookup(char *name) {
 }
 
 int NameToCharCode::hash(const char *name) {
-  char *p;
+  const char *p;
   unsigned int h;
 
   h = 0;
-  for (p = (char *) name; *p; ++p) {
+  for (p = name; *p; ++p) {
     h = 17 * h + (int)(*p & 0xff);
   }
   return (int)(h % size);

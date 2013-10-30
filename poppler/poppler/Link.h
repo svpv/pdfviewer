@@ -6,6 +6,23 @@
 //
 //========================================================================
 
+//========================================================================
+//
+// Modified under the Poppler project - http://poppler.freedesktop.org
+//
+// All changes made under the Poppler project to this file are licensed
+// under GPL version 2 or later
+//
+// Copyright (C) 2006, 2008 Pino Toscano <pino@kde.org>
+// Copyright (C) 2008 Hugo Mercier <hmercier31@gmail.com>
+// Copyright (C) 2010, 2011 Carlos Garcia Campos <carlosgc@gnome.org>
+// Copyright (C) 2012 Tobias Koening <tobias.koenig@kdab.com>
+//
+// To see a description of the changes please see the Changelog file that
+// came with your tarball or type make ChangeLog if you are building from git
+//
+//========================================================================
+
 #ifndef LINK_H
 #define LINK_H
 
@@ -16,10 +33,13 @@
 #include "Object.h"
 
 class GooString;
+class GooList;
 class Array;
 class Dict;
 class Sound;
-class Movie;
+class MediaRendition;
+class AnnotLink;
+class Annots;
 
 //------------------------------------------------------------------------
 // LinkAction
@@ -32,8 +52,10 @@ enum LinkActionKind {
   actionURI,			// URI
   actionNamed,			// named action
   actionMovie,			// movie action
-  actionRendition,
+  actionRendition,		// rendition action
   actionSound,			// sound action
+  actionJavaScript,		// JavaScript action
+  actionOCGState,               // Set-OCG-State action
   actionUnknown			// anything else
 };
 
@@ -54,10 +76,6 @@ public:
 
   // Parse an action dictionary.
   static LinkAction *parseAction(Object *obj, GooString *baseURI = NULL);
-
-  // Extract a file name from a file specification (string or
-  // dictionary).
-  static GooString *getFileSpecName(Object *fileSpecObj);
 };
 
 //------------------------------------------------------------------------
@@ -112,8 +130,10 @@ private:
   double left, bottom;		// position
   double right, top;
   double zoom;			// zoom factor
-  GBool changeLeft, changeTop;	// for destXYZ links, which position
-  GBool changeZoom;		//   components to change
+  GBool changeLeft, changeTop;	// which position components to change:
+  GBool changeZoom;		//   destXYZ uses all three;
+				//   destFitH/BH use changeTop;
+				//   destFitV/BV use changeLeft
   GBool ok;			// set if created successfully
 
   LinkDest(LinkDest *dest);
@@ -300,6 +320,16 @@ private:
 
 class LinkRendition: public LinkAction {
 public:
+  /**
+   * Describes the possible rendition operations.
+   */
+  enum RenditionOperation {
+    NoRendition,
+    PlayRendition,
+    StopRendition,
+    PauseRendition,
+    ResumeRendition
+  };
 
   LinkRendition(Object *Obj);
 
@@ -309,23 +339,27 @@ public:
 
   virtual LinkActionKind getKind() { return actionRendition; }
 
-  GBool hasRenditionObject() { return !renditionObj.isNull(); }
+  GBool hasRenditionObject() { return renditionObj.isDict(); }
   Object* getRenditionObject() { return &renditionObj; }
 
-  GBool hasScreenAnnot() { return screenRef.num > 0; }
-  Ref* getScreenAnnot() { return &screenRef; }
+  GBool hasScreenAnnot() { return screenRef.isRef(); }
+  Ref getScreenAnnot() { return screenRef.getRef(); }
 
-  int getOperation() { return operation; }
+  RenditionOperation getOperation() { return operation; }
 
-  Movie* getMovie() { return movie; }
+  MediaRendition* getMedia() { return media; }
+
+  GooString *getScript() { return js; }
 
 private:
 
-  Ref screenRef;
+  Object screenRef;
   Object renditionObj;
-  int operation;
+  RenditionOperation operation;
 
-  Movie* movie;
+  MediaRendition* media;
+
+  GooString *js;
 };
 
 //------------------------------------------------------------------------
@@ -359,6 +393,57 @@ private:
 };
 
 //------------------------------------------------------------------------
+// LinkJavaScript
+//------------------------------------------------------------------------
+
+class LinkJavaScript: public LinkAction {
+public:
+
+  // Build a LinkJavaScript given the action name.
+  LinkJavaScript(Object *jsObj);
+
+  virtual ~LinkJavaScript();
+
+  virtual GBool isOk() { return js != NULL; }
+
+  virtual LinkActionKind getKind() { return actionJavaScript; }
+  GooString *getScript() { return js; }
+
+private:
+
+  GooString *js;
+};
+
+//------------------------------------------------------------------------
+// LinkOCGState
+//------------------------------------------------------------------------
+class LinkOCGState: public LinkAction {
+public:
+  LinkOCGState(Object *obj);
+
+  virtual ~LinkOCGState();
+
+  virtual GBool isOk() { return stateList != NULL; }
+
+  virtual LinkActionKind getKind() { return actionOCGState; }
+
+  enum State { On, Off, Toggle};
+  struct StateList {
+    StateList() { list = NULL; }
+    ~StateList();
+    State st;
+    GooList *list;
+  };
+
+  GooList *getStateList() { return stateList; }
+  GBool getPreserveRB() { return preserveRB; }
+
+private:
+  GooList *stateList;
+  GBool preserveRB;
+};
+
+//------------------------------------------------------------------------
 // LinkUnknown
 //------------------------------------------------------------------------
 
@@ -384,41 +469,6 @@ private:
 };
 
 //------------------------------------------------------------------------
-// Link
-//------------------------------------------------------------------------
-
-class Link {
-public:
-
-  // Construct a link, given its dictionary.
-  Link(Dict *dict, GooString *baseURI);
-
-  // Destructor.
-  ~Link();
-
-  // Was the link created successfully?
-  GBool isOk() { return ok; }
-
-  // Check if point is inside the link rectangle.
-  GBool inRect(double x, double y)
-    { return x1 <= x && x <= x2 && y1 <= y && y <= y2; }
-
-  // Get action.
-  LinkAction *getAction() { return action; }
-
-  // Get the link rectangle.
-  void getRect(double *xa1, double *ya1, double *xa2, double *ya2)
-    { *xa1 = x1; *ya1 = y1; *xa2 = x2; *ya2 = y2; }
-
-private:
-
-  double x1, y1;		// lower left corner
-  double x2, y2;		// upper right corner
-  LinkAction *action;		// action
-  GBool ok;			// is link valid?
-};
-
-//------------------------------------------------------------------------
 // Links
 //------------------------------------------------------------------------
 
@@ -426,14 +476,14 @@ class Links {
 public:
 
   // Extract links from array of annotations.
-  Links(Object *annots, GooString *baseURI);
+  Links(Annots *annots);
 
   // Destructor.
   ~Links();
 
   // Iterate through list of links.
   int getNumLinks() const { return numLinks; }
-  Link *getLink(int i) const { return links[i]; }
+  AnnotLink *getLink(int i) const { return links[i]; }
 
   // If point <x>,<y> is in a link, return the associated action;
   // else return NULL.
@@ -444,7 +494,7 @@ public:
 
 private:
 
-  Link **links;
+  AnnotLink **links;
   int numLinks;
 };
 

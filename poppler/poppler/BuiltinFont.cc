@@ -54,11 +54,11 @@ GBool BuiltinFontWidths::getWidth(const char *name, Gushort *width) {
 }
 
 int BuiltinFontWidths::hash(const char *name) {
-  char *p;
+  const char *p;
   unsigned int h;
 
   h = 0;
-  for (p = (char *) name; *p; ++p) {
+  for (p = name; *p; ++p) {
     h = 17 * h + (int)(*p & 0xff);
   }
   return (int)(h % size);

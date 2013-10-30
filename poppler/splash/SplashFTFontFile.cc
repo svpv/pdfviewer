@@ -4,6 +4,20 @@
 //
 //========================================================================
 
+//========================================================================
+//
+// Modified under the Poppler project - http://poppler.freedesktop.org
+//
+// All changes made under the Poppler project to this file are licensed
+// under GPL version 2 or later
+//
+// Copyright (C) 2006 Takashi Iwai <tiwai@suse.de>
+//
+// To see a description of the changes please see the Changelog file that
+// came with your tarball or type make ChangeLog if you are building from git
+//
+//========================================================================
+
 #include <config.h>
 
 #if HAVE_FREETYPE_FREETYPE_H || HAVE_FREETYPE_H
@@ -25,10 +39,10 @@
 SplashFontFile *SplashFTFontFile::loadType1Font(SplashFTFontEngine *engineA,
 						SplashFontFileID *idA,
 						SplashFontSrc *src,
-						char **encA) {
+						const char **encA) {
   FT_Face faceA;
-  Gushort *codeToGIDA;
-  char *name;
+  int *codeToGIDA;
+  const char *name;
   int i;
 
   if (src->isFile) {
@@ -38,22 +52,22 @@ SplashFontFile *SplashFTFontFile::loadType1Font(SplashFTFontEngine *engineA,
     if (FT_New_Memory_Face(engineA->lib, (const FT_Byte *)src->buf, src->bufLen, 0, &faceA))
       return NULL;
   }
-  codeToGIDA = (Gushort *)gmallocn(256, sizeof(int));
+  codeToGIDA = (int *)gmallocn(256, sizeof(int));
   for (i = 0; i < 256; ++i) {
     codeToGIDA[i] = 0;
     if ((name = encA[i])) {
-      codeToGIDA[i] = (Gushort)FT_Get_Name_Index(faceA, name);
+      codeToGIDA[i] = (int)FT_Get_Name_Index(faceA, (char *)name);
     }
   }
 
   return new SplashFTFontFile(engineA, idA, src,
-			      faceA, codeToGIDA, 256, gFalse);
+			      faceA, codeToGIDA, 256, gFalse, gTrue);
 }
 
 SplashFontFile *SplashFTFontFile::loadCIDFont(SplashFTFontEngine *engineA,
 					      SplashFontFileID *idA,
 					      SplashFontSrc *src,
-					      Gushort *codeToGIDA,
+					      int *codeToGIDA,
 					      int codeToGIDLenA) {
   FT_Face faceA;
 
@@ -66,13 +80,13 @@ SplashFontFile *SplashFTFontFile::loadCIDFont(SplashFTFontEngine *engineA,
   }
 
   return new SplashFTFontFile(engineA, idA, src,
-			      faceA, codeToGIDA, codeToGIDLenA, gFalse);
+			      faceA, codeToGIDA, codeToGIDLenA, gFalse, gFalse);
 }
 
 SplashFontFile *SplashFTFontFile::loadTrueTypeFont(SplashFTFontEngine *engineA,
 						   SplashFontFileID *idA,
 						   SplashFontSrc *src,
-						   Gushort *codeToGIDA,
+						   int *codeToGIDA,
 						   int codeToGIDLenA,
 						   int faceIndexA) {
   FT_Face faceA;
@@ -86,15 +100,15 @@ SplashFontFile *SplashFTFontFile::loadTrueTypeFont(SplashFTFontEngine *engineA,
   }
 
   return new SplashFTFontFile(engineA, idA, src,
-			      faceA, codeToGIDA, codeToGIDLenA, gTrue);
+			      faceA, codeToGIDA, codeToGIDLenA, gTrue, gFalse);
 }
 
 SplashFTFontFile::SplashFTFontFile(SplashFTFontEngine *engineA,
 				   SplashFontFileID *idA,
 				   SplashFontSrc *src,
 				   FT_Face faceA,
-				   Gushort *codeToGIDA, int codeToGIDLenA,
-				   GBool trueTypeA):
+				   int *codeToGIDA, int codeToGIDLenA,
+				   GBool trueTypeA, GBool type1A):
   SplashFontFile(idA, src)
 {
   engine = engineA;
@@ -102,6 +116,7 @@ SplashFTFontFile::SplashFTFontFile(SplashFTFontEngine *engineA,
   codeToGID = codeToGIDA;
   codeToGIDLen = codeToGIDLenA;
   trueType = trueTypeA;
+  type1 = type1A;
 }
 
 SplashFTFontFile::~SplashFTFontFile() {

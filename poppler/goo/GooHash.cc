@@ -107,7 +107,9 @@ void GooHash::replace(GooString *key, void *val) {
 
   if ((p = find(key, &h))) {
     p->val.p = val;
-    delete key;
+    if (deleteKeys) {
+      delete key;
+    }
   } else {
     add(key, val);
   }
@@ -119,7 +121,9 @@ void GooHash::replace(GooString *key, int val) {
 
   if ((p = find(key, &h))) {
     p->val.i = val;
-    delete key;
+    if (deleteKeys) {
+      delete key;
+    }
   } else {
     add(key, val);
   }
@@ -145,7 +149,7 @@ int GooHash::lookupInt(GooString *key) {
   return p->val.i;
 }
 
-void *GooHash::lookup(char *key) {
+void *GooHash::lookup(const char *key) {
   GooHashBucket *p;
   int h;
 
@@ -155,7 +159,7 @@ void *GooHash::lookup(char *key) {
   return p->val.p;
 }
 
-int GooHash::lookupInt(char *key) {
+int GooHash::lookupInt(const char *key) {
   GooHashBucket *p;
   int h;
 
@@ -211,7 +215,7 @@ int GooHash::removeInt(GooString *key) {
   return val;
 }
 
-void *GooHash::remove(char *key) {
+void *GooHash::remove(const char *key) {
   GooHashBucket *p;
   GooHashBucket **q;
   void *val;
@@ -357,7 +361,7 @@ GooHashBucket *GooHash::find(const char *key, int *h) {
 }
 
 int GooHash::hash(GooString *key) {
-  char *p;
+  const char *p;
   unsigned int h;
   int i;
 
@@ -369,11 +373,11 @@ int GooHash::hash(GooString *key) {
 }
 
 int GooHash::hash(const char *key) {
-  char *p;
+  const char *p;
   unsigned int h;
 
   h = 0;
-  for (p = (char *) key; *p; ++p) {
+  for (p = key; *p; ++p) {
     h = 17 * h + (int)(*p & 0xff);
   }
   return (int)(h % size);

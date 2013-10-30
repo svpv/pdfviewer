@@ -6,6 +6,28 @@
 //
 //========================================================================
 
+//========================================================================
+//
+// Modified under the Poppler project - http://poppler.freedesktop.org
+//
+// All changes made under the Poppler project to this file are licensed
+// under GPL version 2 or later
+//
+// Copyright (C) 2005 Kristian Høgsberg <krh@redhat.com>
+// Copyright (C) 2005 Jeff Muizelaar <jeff@infidigm.net>
+// Copyright (C) 2006 Pino Toscano <pino@kde.org>
+// Copyright (C) 2006, 2011 Carlos Garcia Campos <carlosgc@gnome.org>
+// Copyright (C) 2007 Julien Rebetez <julienr@svn.gnome.org>
+// Copyright (C) 2008 Iñigo Martínez <inigomartinez@gmail.com>
+// Copyright (C) 2012 Fabio D'Urso <fabiodurso@hotmail.it>
+// Copyright (C) 2012 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2013 Thomas Freitag <Thomas.Freitag@alfa.de>
+//
+// To see a description of the changes please see the Changelog file that
+// came with your tarball or type make ChangeLog if you are building from git
+//
+//========================================================================
+
 #ifndef PAGE_H
 #define PAGE_H
 
@@ -13,13 +35,15 @@
 #pragma interface
 #endif
 
+#include "poppler-config.h"
 #include "Object.h"
+#include "goo/GooMutex.h"
 
 class Dict;
+class PDFDoc;
 class XRef;
 class OutputDev;
 class Links;
-class Catalog;
 class Annots;
 class Annot;
 class Gfx;
@@ -30,13 +54,16 @@ class Form;
 
 class PDFRectangle {
 public:
-  FixedPoint x1, y1, x2, y2;
+  double x1, y1, x2, y2;
 
   PDFRectangle() { x1 = y1 = x2 = y2 = 0; }
-  PDFRectangle(FixedPoint x1A, FixedPoint y1A, FixedPoint x2A, FixedPoint y2A)
+  PDFRectangle(double x1A, double y1A, double x2A, double y2A)
     { x1 = x1A; y1 = y1A; x2 = x2A; y2 = y2A; }
   GBool isValid() { return x1 != 0 || y1 != 0 || x2 != 0 || y2 != 0; }
+  GBool contains(double x, double y) { return x1 <= x && x <= x2 && y1 <= y && y <= y2; }
   void clipTo(PDFRectangle *rect);
+  
+  bool operator==(const PDFRectangle &rect) const { return x1 == rect.x1 && y1 == rect.y1 && x2 == rect.x2 && y2 == rect.y2; }
 };
 
 //------------------------------------------------------------------------
@@ -78,6 +105,11 @@ public:
 	? separationInfo.getDict() : (Dict *)NULL; }
   Dict *getResourceDict()
     { return resources.isDict() ? resources.getDict() : (Dict *)NULL; }
+  void replaceResource(Object obj1) 
+  {  resources.free(); obj1.copy(&resources); }
+
+  // Clip all other boxes to the MediaBox.
+  void clipBoxes();
 
 private:
 
@@ -107,7 +139,7 @@ class Page {
 public:
 
   // Constructor.
-  Page(XRef *xrefA, int numA, Dict *pageDict, PageAttrs *attrsA, Form *form);
+  Page(PDFDoc *docA, int numA, Dict *pageDict, Ref pageRefA, PageAttrs *attrsA, Form *form);
 
   // Destructor.
   ~Page();
@@ -120,13 +152,13 @@ public:
   PDFRectangle *getMediaBox() { return attrs->getMediaBox(); }
   PDFRectangle *getCropBox() { return attrs->getCropBox(); }
   GBool isCropped() { return attrs->isCropped(); }
-  FixedPoint getMediaWidth() 
+  double getMediaWidth() 
     { return attrs->getMediaBox()->x2 - attrs->getMediaBox()->x1; }
-  FixedPoint getMediaHeight()
+  double getMediaHeight()
     { return attrs->getMediaBox()->y2 - attrs->getMediaBox()->y1; }
-  FixedPoint getCropWidth() 
+  double getCropWidth() 
     { return attrs->getCropBox()->x2 - attrs->getCropBox()->x1; }
-  FixedPoint getCropHeight()
+  double getCropHeight()
     { return attrs->getCropBox()->y2 - attrs->getCropBox()->y1; }
   PDFRectangle *getBleedBox() { return attrs->getBleedBox(); }
   PDFRectangle *getTrimBox() { return attrs->getTrimBox(); }
@@ -138,18 +170,25 @@ public:
   Stream *getMetadata() { return attrs->getMetadata(); }
   Dict *getPieceInfo() { return attrs->getPieceInfo(); }
   Dict *getSeparationInfo() { return attrs->getSeparationInfo(); }
+  PDFDoc *getDoc() { return doc; }
+  Ref getRef() { return pageRef; }
 
   // Get resource dictionary.
-  Dict *getResourceDict() { return attrs->getResourceDict(); }
+  Dict *getResourceDict();
+  Dict *getResourceDictCopy(XRef *xrefA);
 
   // Get annotations array.
-  Object *getAnnots(Object *obj) { return annots.fetch(xref, obj); }
+  Object *getAnnots(Object *obj, XRef *xrefA = NULL) { return annotsObj.fetch((xrefA == NULL) ? xref : xrefA, obj); }
+  // Add a new annotation to the page
+  void addAnnot(Annot *annot);
+  // Remove an existing annotation from the page
+  void removeAnnot(Annot *annot);
 
   // Return a list of links.
-  Links *getLinks(Catalog *catalog);
+  Links *getLinks();
 
-  // Return a list of annots. Ownership is transferred to the caller.
-  Annots *getAnnots(Catalog *catalog);
+  // Return a list of annots. It will be valid until the page is destroyed
+  Annots *getAnnots(XRef *xrefA = NULL);
 
   // Get contents.
   Object *getContents(Object *obj) { return contents.fetch(xref, obj); }
@@ -162,70 +201,78 @@ public:
   Object *getTrans(Object *obj) { return trans.fetch(xref, obj); }
 
   // Get form.
-  FormPageWidgets *getPageWidgets() { return pageWidgets; }
+  FormPageWidgets *getFormWidgets();
 
   // Get duration, the maximum length of time, in seconds,
   // that the page is displayed before the presentation automatically
   // advances to the next page
-  FixedPoint getDuration() { return duration; }
+  double getDuration() { return duration; }
 
   // Get actions
   Object *getActions(Object *obj) { return actions.fetch(xref, obj); }
 
-  Gfx *createGfx(OutputDev *out, FixedPoint hDPI, FixedPoint vDPI,
+  Gfx *createGfx(OutputDev *out, double hDPI, double vDPI,
 		 int rotate, GBool useMediaBox, GBool crop,
 		 int sliceX, int sliceY, int sliceW, int sliceH,
-		 GBool printing, Catalog *catalog,
+		 GBool printing,
 		 GBool (*abortCheckCbk)(void *data),
-		 void *abortCheckCbkData,
-		 GBool (*annotDisplayDecideCbk)(Annot *annot, void *user_data),
-		 void *annotDisplayDecideCbkData);
+		 void *abortCheckCbkData, XRef *xrefA = NULL);
 
   // Display a page.
-  void display(OutputDev *out, FixedPoint hDPI, FixedPoint vDPI,
+  void display(OutputDev *out, double hDPI, double vDPI,
 	       int rotate, GBool useMediaBox, GBool crop,
-	       GBool printing, Catalog *catalog,
+	       GBool printing,
 	       GBool (*abortCheckCbk)(void *data) = NULL,
 	       void *abortCheckCbkData = NULL,
                GBool (*annotDisplayDecideCbk)(Annot *annot, void *user_data) = NULL,
-               void *annotDisplayDecideCbkData = NULL);
+               void *annotDisplayDecideCbkData = NULL,
+               GBool copyXRef = gFalse);
 
   // Display part of a page.
-  void displaySlice(OutputDev *out, FixedPoint hDPI, FixedPoint vDPI,
+  void displaySlice(OutputDev *out, double hDPI, double vDPI,
 		    int rotate, GBool useMediaBox, GBool crop,
 		    int sliceX, int sliceY, int sliceW, int sliceH,
-		    GBool printing, Catalog *catalog,
+		    GBool printing,
 		    GBool (*abortCheckCbk)(void *data) = NULL,
 		    void *abortCheckCbkData = NULL,
                     GBool (*annotDisplayDecideCbk)(Annot *annot, void *user_data) = NULL,
-                    void *annotDisplayDecideCbkData = NULL);
+                    void *annotDisplayDecideCbkData = NULL,
+                    GBool copyXRef = gFalse);
 
   void display(Gfx *gfx);
 
-  void makeBox(FixedPoint hDPI, FixedPoint vDPI, int rotate,
+  void makeBox(double hDPI, double vDPI, int rotate,
 	       GBool useMediaBox, GBool upsideDown,
-	       FixedPoint sliceX, FixedPoint sliceY, FixedPoint sliceW, FixedPoint sliceH,
+	       double sliceX, double sliceY, double sliceW, double sliceH,
 	       PDFRectangle *box, GBool *crop);
 
-  void processLinks(OutputDev *out, Catalog *catalog);
+  void processLinks(OutputDev *out);
 
   // Get the page's default CTM.
-  void getDefaultCTM(FixedPoint *ctm, FixedPoint hDPI, FixedPoint vDPI,
+  void getDefaultCTM(double *ctm, double hDPI, double vDPI,
 		     int rotate, GBool useMediaBox, GBool upsideDown);
 
 private:
+  // replace xref
+  void replaceXRef(XRef *xrefA);
 
+  PDFDoc *doc;
   XRef *xref;			// the xref table for this PDF file
+  Object pageObj;               // page dictionary
+  Ref pageRef;                  // page reference
   int num;			// page number
   PageAttrs *attrs;		// page attributes
-  Object annots;		// annotations array
+  Annots *annots;               // annotations
+  Object annotsObj;		// annotations array
   Object contents;		// page contents
-  FormPageWidgets *pageWidgets; 			// the form for that page
   Object thumb;			// page thumbnail
   Object trans;			// page transition
   Object actions;		// page addiction actions
-  FixedPoint duration;              // page duration
+  double duration;              // page duration
   GBool ok;			// true if page is valid
+#if MULTITHREADED
+  GooMutex mutex;
+#endif
 };
 
 #endif
