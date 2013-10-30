@@ -5,7 +5,7 @@ extern "C" const ibitmap pdfmode;
 const int SC_PREVIEW[] = { 33, 50, -1 };
 const int SC_NORMAL[] = { 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 130, 140, 150, 160, 170, 180, -1 };
 const int SC_COLUMNS[] = { 200, 300, 400, 500, -1 };
-const int SC_REFLOW[] = { 150, 200, 300, 400, 500, -1 };
+const int SC_REFLOW[] = { 150, 200, 250, 300, 400, 500, -1 };
 const int SC_DIRECT[] = { 33, 50, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 130, 140, 150, 160, 170, 180, 200, 250, 300, 350, 400, 450, 500, -1 };
 
 static iv_handler prevhandler;

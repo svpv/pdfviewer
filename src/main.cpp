@@ -653,7 +653,7 @@ int get_zoom_param(int& zoom_type, int& zoom_param)
 	const int SC_PREVIEW[] = { 33, 50, -1 };
 	const int SC_NORMAL[] = { 75, 80, 85, 90, 95, 100, 105, 120, 130, 140, 150, 170, -1 };
 	const int SC_COLUMNS[] = { 200, 300, 400, 500, -1 };
-	const int SC_REFLOW[] = { 150, 200, 300, 400, 500, -1 };
+	const int SC_REFLOW[] = { 150, 200, 250, 300, 400, 500, -1 };
 
 	if (reflow_mode)
 	{

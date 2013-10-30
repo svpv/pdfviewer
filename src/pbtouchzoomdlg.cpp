@@ -23,6 +23,7 @@ const int CMD_COLUMNS4	= ZoomTypeColumns << 16 | 400;
 const int CMD_COLUMNS5	= ZoomTypeColumns << 16 | 500;
 const int CMD_REFLOW150	= ZoomTypeReflow << 16 | 150;
 const int CMD_REFLOW200	= ZoomTypeReflow << 16 | 200;
+const int CMD_REFLOW250	= ZoomTypeReflow << 16 | 250;
 const int CMD_REFLOW300	= ZoomTypeReflow << 16 | 300;
 const int CMD_REFLOW400	= ZoomTypeReflow << 16 | 400;
 const int CMD_REFLOW500	= ZoomTypeReflow << 16 | 500;
@@ -114,11 +115,12 @@ int PBTouchZoomDlg::OnCreate()
 	CreateButton(LEFT_MARGIN + 4*(BTN_WIDTH + BTN_HOR_MARGIN), ROW4_HEIGHT, BTN_WIDTH, BTN_HEIGHT, CMD_COLUMNS5, &bmp_zoom_columns, "500%");
 
 	CreateLabel(0, ROW5_HEIGHT - 20, WND_WIDTH, 20, GetLangText("@Reflow"));
-	CreateButton(LEFT_MARGIN + BTN_WIDTH/2 + 0*(BTN_WIDTH + BTN_HOR_MARGIN), ROW5_HEIGHT, BTN_WIDTH, BTN_HEIGHT, CMD_REFLOW150, &bmp_zoom_reflow, "150%");
-	CreateButton(LEFT_MARGIN + BTN_WIDTH/2 + 1*(BTN_WIDTH + BTN_HOR_MARGIN), ROW5_HEIGHT, BTN_WIDTH, BTN_HEIGHT, CMD_REFLOW200, &bmp_zoom_reflow, "200%");
-	CreateButton(LEFT_MARGIN + BTN_WIDTH/2 + 2*(BTN_WIDTH + BTN_HOR_MARGIN), ROW5_HEIGHT, BTN_WIDTH, BTN_HEIGHT, CMD_REFLOW300, &bmp_zoom_reflow, "300%");
-	CreateButton(LEFT_MARGIN + BTN_WIDTH/2 + 3*(BTN_WIDTH + BTN_HOR_MARGIN), ROW5_HEIGHT, BTN_WIDTH, BTN_HEIGHT, CMD_REFLOW400, &bmp_zoom_reflow, "400%");
-	CreateButton(LEFT_MARGIN + BTN_WIDTH/2 + 4*(BTN_WIDTH + BTN_HOR_MARGIN), ROW5_HEIGHT, BTN_WIDTH, BTN_HEIGHT, CMD_REFLOW500, &bmp_zoom_reflow, "500%");
+	CreateButton(LEFT_MARGIN + 0*(BTN_WIDTH + BTN_HOR_MARGIN), ROW5_HEIGHT, BTN_WIDTH, BTN_HEIGHT, CMD_REFLOW150, &bmp_zoom_reflow, "150%");
+	CreateButton(LEFT_MARGIN + 1*(BTN_WIDTH + BTN_HOR_MARGIN), ROW5_HEIGHT, BTN_WIDTH, BTN_HEIGHT, CMD_REFLOW200, &bmp_zoom_reflow, "200%");
+	CreateButton(LEFT_MARGIN + 2*(BTN_WIDTH + BTN_HOR_MARGIN), ROW5_HEIGHT, BTN_WIDTH, BTN_HEIGHT, CMD_REFLOW250, &bmp_zoom_reflow, "250%");
+	CreateButton(LEFT_MARGIN + 3*(BTN_WIDTH + BTN_HOR_MARGIN), ROW5_HEIGHT, BTN_WIDTH, BTN_HEIGHT, CMD_REFLOW300, &bmp_zoom_reflow, "300%");
+	CreateButton(LEFT_MARGIN + 4*(BTN_WIDTH + BTN_HOR_MARGIN), ROW5_HEIGHT, BTN_WIDTH, BTN_HEIGHT, CMD_REFLOW400, &bmp_zoom_reflow, "400%");
+	CreateButton(LEFT_MARGIN + 5*(BTN_WIDTH + BTN_HOR_MARGIN), ROW5_HEIGHT, BTN_WIDTH, BTN_HEIGHT, CMD_REFLOW500, &bmp_zoom_reflow, "500%");
 
 	return 0;
 }
@@ -433,7 +435,7 @@ int PBTouchZoomDlg::GetNextZoomParam(TZoomType zoom_type, int zoom_param, bool d
 	const int SC_PREVIEW[] = { 33, 50 };
 	const int SC_NORMAL[] =	{ 75, 80, 85, 90, 95, 100, 105, 110, 120, 130, 140, 150, 170 };
 	const int SC_COLUMNS[] = { 200, 300, 400, 500 };
-	const int SC_REFLOW[] =	{ 150, 200, 300, 400, 500 };
+	const int SC_REFLOW[] =	{ 150, 200, 250, 300, 400, 500 };
 	const int SC_EPUB[] = { 6, 9, 12, 14, 16, 21, 28 };
 
 	if (zoom_type == ZoomTypeNormal)
@@ -471,7 +473,7 @@ void PBTouchZoomDlg::GetNextZoomParam(TZoomType zoom_type, int zoom_param, bool 
 	const int SC_PREVIEW[] = { 33, 50 };
 	const int SC_NORMAL[] =	{ 75, 80, 85, 90, 95, 100, 105, 110, 120, 130, 140, 150, 170 };
 	const int SC_COLUMNS[] = { 200, 300, 400, 500 };
-	const int SC_REFLOW[] =	{ 150, 200, 300, 400, 500 };
+	const int SC_REFLOW[] =	{ 150, 200, 250, 300, 400, 500 };
 	const int SC_EPUB[] = { 6, 9, 12, 14, 16, 21, 28 };
 
 	new_zoom_type = zoom_type;

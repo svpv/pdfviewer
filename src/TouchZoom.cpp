@@ -12,7 +12,7 @@ namespace TouchZoom
 	const int SC_COLUMNS[] =
 	{ 200, 300, 400, 500, -1 };
 	const int SC_REFLOW[] =
-	{ 150, 200, 300, 400, 500, -1 };
+	{ 150, 200, 250, 300, 400, 500, -1 };
 
 	static iv_handler prevhandler;
 	static ibitmap* bm_touchzoom = NULL;
@@ -67,7 +67,7 @@ namespace TouchZoom
 						switch (j)
 						{
 							case 4:
-								if (i > 4) return false;
+								if (i > 5) return false;
 								new_rscale = SC_REFLOW[i];
 								new_reflow = 1;
 								break;
