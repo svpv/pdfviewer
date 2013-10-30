@@ -8,6 +8,8 @@ LIBS = -lfreetype -lfontconfig -ljpeg
 VPATH += poppler/goo poppler/fofi poppler/splash poppler/poppler
 SOURCES += $(notdir $(wildcard poppler/goo/*.cc poppler/fofi/*.cc poppler/splash/*.cc poppler/poppler/*.cc))
 
+CXXFLAGS += -fno-exceptions -fno-check-new -fno-common
+
 ifeq ($(BUILD), arm)
 CXXFLAGS += -DLLONG_MAX=LONG_MAX
 LDFLAGS += -Wl,-rpath,/mnt/ext1/system/lib
