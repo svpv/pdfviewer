@@ -20,7 +20,9 @@
 
 #include "pdfviewer.h"
 #include "main.h"
+#if PBFRAMEWORK
 #include "pbmainframe.h"
+#endif
 
 int cpage = 1, npages = 1, subpage = 0, nsubpages = 1;
 int * cpage_main = &cpage;
@@ -271,7 +273,11 @@ static void stop_search()
 	search_mode = 0;
 	scale = savescale;
 	reflow_mode = savereflow;
-	SetEventHandler(PBMainFrame::main_handler/*main_handler*/);
+#if PBFRAMEWORK
+	SetEventHandler(PBMainFrame::main_handler);
+#else
+	SetEventHandler(main_handler);
+#endif
 }
 
 static int search_handler(int type, int par1, int par2)
@@ -593,6 +599,7 @@ void zoom_out()
 	SetHardTimer("ZOOM", zoom_timer, 1000);
 }
 
+#if PBFRAMEWORK
 void apply_scale_factor(int zoom_type, int new_scale)
 {
 	ScaleZoomType = 0;
@@ -683,6 +690,7 @@ int get_zoom_param(int& zoom_type, int& zoom_param)
 	}
 	return zoom_param;
 }
+#endif
 
 void show_hide_panel()
 {
@@ -913,7 +921,9 @@ static void update_toc(GooList* items, int level)
 	}
 }
 
+#if PBFRAMEWORK
 #include <bookstate.h>
+#endif
 
 void save_settings()
 {
@@ -925,14 +935,13 @@ void save_settings()
 	docstate.subpage = subpage;
 	docstate.offx = offx;
 	docstate.offy = offy;
+	docstate.scale = scale;
+#if PBFRAMEWORK
 	if (ScaleZoomType == ZoomTypeFitWidth)
 	{
 		docstate.scale = 0;
 	}
-	else
-	{
-		docstate.scale = scale;
-	}
+#endif
 	docstate.rscale = rscale;
 	docstate.orient = orient;
 	if (reflow_mode) docstate.orient |= 0x80;
@@ -944,6 +953,7 @@ void save_settings()
 		iv_fclose(f);
 	}
 
+#if PBFRAMEWORK
 	bsHandle newstate = bsLoad(FileName);
 	if (newstate)
 	{
@@ -956,6 +966,7 @@ void save_settings()
 			fprintf(stderr, "Save to db failed!\n");
 		bsClose(newstate);
 	}
+#endif
 
 	sync();
 	fprintf(stderr, "pdfviewer: saving settings done\n");
@@ -1303,15 +1314,14 @@ int main(int argc, char** argv)
 	subpage = docstate.subpage;
 	offx = docstate.offx;
 	offy = docstate.offy;
+	scale = docstate.scale;
+#if PBFRAMEWORK
 	if (docstate.scale == 0)
 	{
 		scale = get_fit_scale();
 		ScaleZoomType = ZoomTypeFitWidth;
 	}
-	else
-	{
-		scale = docstate.scale;
-	}
+#endif
 	rscale = docstate.rscale;
 	reflow_mode = (docstate.orient & 0x80) ? 1 : 0;
 
@@ -1358,9 +1368,278 @@ int main(int argc, char** argv)
 #ifdef USESYNOPSIS
 	PrepareActiveContent(0);
 #endif
+
+#if PBFRAMEWORK
 	PBMainFrame main_frame(FileName);
 	main_frame.Create(NULL, 0, 0, 1, 1, PBWS_VISIBLE, 0);
 	main_frame.Run();
+#else
+	InkViewMain(main_handler);
+#endif
+	return 0;
+}
+
+#if !PBFRAMEWORK
+
+static void open_quickmenu();
+
+static void prev_page() { turn_page(-1); }
+static void next_page() { turn_page(+1); }
+static void jump_pr10() { jump_pages(-10); }
+static void jump_nx10() { jump_pages(+10); }
+static void stop_jump() { out_page(1); }
+static void open_pageselector() { OpenPageSelector(page_selected); }
+static void first_page() { page_selected(1); }
+static void last_page() { page_selected(npages); }
+static void prev_section() { }
+static void next_section() { }
+
+static void start_search() { OpenKeyboard(GetLangText("@Search"), kbdbuffer, 30, 0, search_enter); }
+static void open_rotate() { OpenRotateBox(rotate_handler); }
+static void main_menu() { OpenMainMenu(); }
+static void exit_reader() { CloseApp(); }
+static void open_mp3() { OpenPlayer(); }
+static void mp3_pause() { TogglePlaying(); }
+static void volume_up() { int r = GetVolume(); SetVolume(r+3); }
+static void volume_down() { int r = GetVolume(); SetVolume(r-3); }
+
+void open_dictionary()
+{
+	get_page_word_list(&diclist, &diclen, -1);
+	OpenDictionaryView(diclist, NULL);
+}
+
+static const struct {
+	char *action;
+	void (*f1)();
+	void (*f2)();
+	void (*f3)();
+} KA[] = {
+	{ "@KA_menu", open_quickmenu, NULL, NULL },
+	{ "@KA_prev", prev_page, prev_page, NULL },
+	{ "@KA_next", next_page, next_page, NULL },
+	{ "@KA_pr10", jump_pr10, jump_pr10, stop_jump },
+	{ "@KA_nx10", jump_nx10, jump_nx10, stop_jump },
+	{ "@KA_goto", open_pageselector, NULL, NULL },
+	{ "@KA_frst", first_page, NULL, NULL },
+	{ "@KA_last", last_page, NULL, NULL },
+	{ "@KA_prse", prev_section, NULL, NULL },
+	{ "@KA_nxse", next_section, NULL, NULL },
+	{ "@KA_obmk", open_bookmarks, NULL, NULL },
+	{ "@KA_nbmk", new_bookmark, NULL, NULL },
+	{ "@KA_nnot", new_note, NULL, NULL },
+	{ "@KA_savp", save_page_note, NULL, NULL },
+	{ "@KA_onot", open_notes, NULL, NULL },
+	{ "@KA_mpdf", pdf_mode, NULL, NULL },
+	//{ "@KA_olnk", open_links, NULL, NULL },
+	//{ "@KA_blnk", back_link, NULL, NULL },
+	{ "@KA_cnts", open_contents, NULL, NULL },
+	{ "@KA_srch", start_search, NULL, NULL },
+	{ "@KA_dict", open_dictionary, NULL, NULL },
+	{ "@KA_zoom", open_mini_zoomer, NULL, NULL },
+	{ "@KA_zmin", zoom_in, NULL, NULL },
+	{ "@KA_zout", zoom_out, NULL, NULL },
+	{ "@KA_hidp", show_hide_panel, NULL, NULL },
+	{ "@KA_rtte", open_rotate, NULL, NULL },
+	{ "@KA_mmnu", main_menu, NULL, NULL },
+	{ "@KA_exit", exit_reader, NULL, NULL },
+	{ "@KA_mp3o", open_mp3, NULL, NULL },
+	{ "@KA_mp3p", mp3_pause, NULL, NULL },
+	{ "@KA_volp", volume_up, NULL, NULL },
+	{ "@KA_volm", volume_down, NULL, NULL },
+	{ NULL, NULL, NULL, NULL }
+};
+
+static void menu_handler(int pos)
+{
+	char buf[32], *act;
+
+	static const char *def_menuaction[9] = {
+		"@KA_goto", "@KA_exit", "@KA_srch",
+		"@KA_obmk", "@KA_none", "@KA_rtte",
+		"@KA_dict", "@KA_zoom", "@KA_cnts"
+	};
+
+	if (pos < 0) return;
+	sprintf(buf, "qmenu.pdfviewer.%i.action", pos);
+	act = GetThemeString(buf, (char *)def_menuaction[pos]);
+
+	for (int i=0; KA[i].action != NULL; i++) {
+		if (strcmp(act, KA[i].action) != 0) continue;
+		if (KA[i].f1 != NULL) (KA[i].f1)();
+		if (KA[i].f3 != NULL) (KA[i].f3)();
+		break;
+	}
+}
+
+static void open_quickmenu()
+{
+	static ibitmap *m3x3;
+	static char *strings3x3[9];
+
+	static const char *def_menutext[9] = {
+		"@Goto_page", "@Exit", "@Search",
+		"@Bookmarks", "@Menu", "@Rotate",
+		"@Dictionary", "@Zoom", "@Contents"
+	};
+
+	if (m3x3 == NULL) {
+		m3x3 = GetResource("pdfviewer_menu", NULL);
+		if (m3x3 == NULL) m3x3 = NewBitmap(128, 128);
+
+		for (int i=0; i<9; i++) {
+			char buf[32];
+			sprintf(buf, "qmenu.pdfviewer.%i.text", i);
+			strings3x3[i] = GetThemeString(buf, (char *)def_menutext[i]);
+		}
+	}
+
+	OpenMenu3x3(m3x3, (const char **)strings3x3, menu_handler);
+}
+
+static int act_on_press(char *a0, char *a1)
+{
+	if (a0 == NULL || a1 == NULL || strcmp(a1, "@KA_none") == 0) return 1;
+	if (strcmp(a0, "@KA_prev") == 0 || strcmp(a0, "@KA_next") == 0) {
+		if (strcmp(a1, "@KA_pr10") == 0) return 1;
+		if (strcmp(a1, "@KA_nx10") == 0) return 1;
+	}
+	return 0;
+}
+
+static int key_handler(int type, int par1, int par2)
+{
+
+	char *act0, *act1, *act=NULL;
+	int i;
+
+	if (type == EVT_KEYPRESS) kill_bgpainter();
+
+	static int initialized;
+	static char *keyact0[32], *keyact1[32];
+	if (!initialized) {
+		GetKeyMapping(keyact0, keyact1);
+		for (i=0; i<32; i++)
+			if (keyact0[i]!=NULL && strcmp(keyact0[i],"@KA_olnk")==0)
+				keyact0[i]="@KA_zout";
+		initialized = 1;
+	}
+
+	act0 = keyact0[par1];
+	act1 = keyact1[par1];
+
+	if (par1 >= 0x20) {
+
+		// aplhanumeric keys
+		return 0;
+
+	} else if (par1 == KEY_BACK) {
+
+		CloseApp();
+		return 0;
+
+	} else if (par1 == KEY_POWER)  {
+
+		return 0;
+
+	} else if ((par1==KEY_UP || par1== KEY_DOWN || par1==KEY_LEFT || par1==KEY_RIGHT)
+	  && (type == EVT_KEYPRESS || (type == EVT_KEYRELEASE && par2 == 0))
+	  && ! reflow_mode) {
+
+		if (act_on_press(act0, act1)) {
+			if (type == EVT_KEYPRESS) handle_navikey(par1);
+		} else {
+			if (type == EVT_KEYRELEASE) handle_navikey(par1);
+		}
+		return 0;
+
+	} else {
+
+		if (type == EVT_KEYPRESS && act_on_press(act0, act1)) {
+			act = act0;
+		} else if (type == EVT_KEYRELEASE && par2 == 0 && !act_on_press(act0, act1)) {
+			act = act0;
+		} else if (type == EVT_KEYREPEAT) {
+			act = act1;
+		} else if (type == EVT_KEYRELEASE && par2 > 0) {
+			act = act1;
+			par2 = -1;
+		}
+		if (act == NULL) return 1;
+
+		for (i=0; KA[i].action != NULL; i++) {
+			if (strcmp(act, KA[i].action) != 0) continue;
+			if (par2 == -1) {
+				if (KA[i].f3 != NULL) (KA[i].f3)();
+			} else if (par2 <= 1) {
+				if (KA[i].f1 != NULL) (KA[i].f1)();
+				if (act == act0 && KA[i].f3 != NULL) (KA[i].f3)();
+			} else {
+				if (KA[i].f2 != NULL) (KA[i].f2)();
+			}
+			break;
+		}
+		return 1;
+	}
+}
+
+int main_handler(int type, int par1, int par2)
+{
+	if (type == EVT_INIT) {
+		//SetOrientation(orient);
+		panelh = PanelHeight();
+	}
+
+	if (type == EVT_EXIT)
+		save_settings();
+
+	if (type == EVT_SHOW) {
+		SetKeyboardRate(700, 500);
+		out_page(1);
+		if (! ready_sent) BookReady(FileName);
+		ready_sent = 1;
+	}
+
+	if (type == EVT_KEYPRESS || type == EVT_KEYREPEAT || type == EVT_KEYRELEASE) {
+		return key_handler(type, par1, par2);
+	}
+
+	if (type == EVT_ORIENTATION) {
+		draw_wait_thumbnail();
+		orient = par1;
+		SetOrientation(orient);
+		out_page(1);
+	}
+
+	if (type == EVT_SNAPSHOT) {
+		fprintf(stderr, "EVT_SNAPSHOT\n");
+		DrawPanel((ibitmap *)PANELICON_LOAD, "@snapshot_info", NULL, -1);
+		PageSnapshot();
+	}
+
+	if (type == EVT_PREVPAGE) {
+		if (reflow_mode || scale < 200) {
+			prev_page();
+		} else {
+			handle_navikey(KEY_UP);
+		}
+		return 0;
+	}
+
+	if (type == EVT_NEXTPAGE) {
+		if (reflow_mode || scale < 200) {
+			next_page();
+		} else {
+			handle_navikey(KEY_DOWN);
+		}
+		return 0;
+	}
+
+	if (type == EVT_OPENDIC) {
+		open_dictionary();
+		return 0;
+	}
 
 	return 0;
 }
+#endif

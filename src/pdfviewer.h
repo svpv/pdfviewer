@@ -113,7 +113,6 @@ extern TextOutputDev* textout;
 extern SearchOutputDev* searchout;
 extern tdocstate docstate;
 
-extern ibitmap* m3x3;
 extern ibitmap* bmk_flag;
 
 static inline int is_portrait()
