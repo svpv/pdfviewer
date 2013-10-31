@@ -92,6 +92,8 @@ void get_page_size(int n, int* w, int* h, double* res)
 		*res = realscale * 72.0 / 100.0 * sw / pw;
 }
 
+static int top_margin;
+
 void find_off(int step)
 {
 	int sw = ScreenWidth();
@@ -107,7 +109,7 @@ void find_off(int step)
 	if (step < 0)
 	{
 		step = -step;
-		if (offy <= 1)
+		if (offy <= top_margin + 1)
 		{
 			if (scale < 200 || offx <= 0)
 			{
@@ -394,6 +396,27 @@ static int center_image(int sw, int* rw)
 
 }
 
+static int peek_top_margin(int max)
+{
+	unsigned char *p;
+	int w, h, row;
+	get_bitmap_data(&p, &w, &h, &row);
+	assert(h >= max);
+
+	int sw = ScreenWidth();
+	if (w > sw) w = sw;
+
+	int y;
+	int c = *p;
+	for (y = 0; y < max; y++, p += row)
+		for (int x = offx; x < w; x++)
+			if (p[x] != c) goto done;
+done:
+	y -= 10;
+	if (y < 0) y = 0;
+	return y;
+}
+
 int get_fit_scale()
 {
 
@@ -414,7 +437,7 @@ int get_fit_scale()
 static void draw_page_image()
 {
 
-	int sw, sh, pw, ph, x, y, w, h, dx, row, orn, i, grads;
+	int sw, sh, pw, ph, x, y, w, h, dx, dy, row, orn, i, grads;
 	double tx, ty, tw, th, cw, mw;
 	double res;
 	unsigned char* data;
@@ -432,7 +455,7 @@ static void draw_page_image()
 
 	get_page_size(cpage, &pw, &ph, &res);
 
-	scrx = scry = dx = 0;
+	scrx = scry = dx = dy = 0;
 
 	if (! after_hand_move)
 	{
@@ -444,26 +467,48 @@ static void draw_page_image()
 
 	if (! reflow_mode)
 	{
-
-		if (scale > 50 && scale <= 99)
+		int center = 0;
+		if (sw >= pw)
 		{
 			scrx = (sw - pw) / 2;
 			offx = 0;
 		}
-		splashOut->setup(gFalse, 0, 0, 0, sw, sh - panelh, 0, 0, 0, 0, res);
-		if (scale > 100 && scale <= 199 && ! after_hand_move)
+		else if (scale <= 199 && ! after_hand_move)
 		{
-			display_slice(cpage, scale, res, gFalse, 0, offy, pw, sh - panelh);
-			//doc->displayPageSlice(splashOut, cpage, res, res, 0, gFalse, gTrue/*gFalse*/, gFalse, 0, offy, pw, sh);
-			dx = center_image(sw, NULL);
-			offx = dx;
-			if (dx < 0) dx = 0;
+			center = 1;
+		}
+
+		int max_top_margin = 0;
+		if (sh - panelh >= ph)
+		{
+			scry = 0;
+			offy = 0;
+		}
+		else if (offy <= 1 && scale <= 199 && ! after_hand_move)
+		{
+			max_top_margin = (ph - (sh - panelh)) * 2 / 3;
+			if (max_top_margin > ph / 8)
+				max_top_margin = ph / 8;
+		}
+
+		splashOut->setup(gFalse, 0, 0, 0, sw, sh - panelh, 0, 0, 0, 0, res);
+
+		if (center)
+		{
+			display_slice(cpage, scale, res, gFalse, 0, offy, pw, sh - panelh + max_top_margin);
+			offx = dx = center_image(sw, NULL);
+			assert(dx >= 0);
 		}
 		else
 		{
-			display_slice(cpage, scale, res, gFalse, offx, offy, sw, sh - panelh);
-			//doc->displayPageSlice(splashOut, cpage, res, res, 0, gFalse, gTrue/*gFalse*/, gFalse, offx, offy, sw, sh);
+			display_slice(cpage, scale, res, gFalse, offx, offy, sw, sh - panelh + max_top_margin);
 		}
+
+		if (max_top_margin) {
+			offy = dy = top_margin = peek_top_margin(max_top_margin);
+			assert(dy >= 0);
+		}
+
 		nsubpages = 1;
 
 	}
@@ -500,9 +545,9 @@ static void draw_page_image()
 
 	get_bitmap_data(&data, &w, &h, &row);
 
-	Stretch(data, USE4 ? IMAGE_GRAY4 : IMAGE_GRAY8, w, h, row, scrx - dx, scry, w, h, 0);
+	Stretch(data, USE4 ? IMAGE_GRAY4 : IMAGE_GRAY8, w, h, row, scrx - dx, scry - dy, w, h, 0);
 	grads = (1 << GetHardwareDepth());
-	if (grads > 4) DitherArea(scrx - dx, scry, w, h, grads, DITHER_DIFFUSION);
+	if (grads > 4) DitherArea(scrx - dx, scry - dy, w, h, grads, DITHER_DIFFUSION);
 
 	if (watermark >= 0)
 	{
@@ -675,6 +720,8 @@ void out_page(int full)
 {
     char buf[32];
     int n = 1, h;
+
+    top_margin = 0;
 
     if (reflow_mode || scale > 50)
     {
