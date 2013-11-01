@@ -15,6 +15,10 @@ CXXFLAGS += -DLLONG_MAX=LONG_MAX
 LDFLAGS += -Wl,-rpath,/mnt/ext1/system/lib
 endif
 
+ifeq ($(BUILD), arm_gnueabi)
+LDFLAGS += -Wl,-rpath,/mnt/ext1/system/lib
+endif
+
 ifeq ($(BUILD), arm)
 PBFRAMEWORK =
 else
@@ -46,6 +50,10 @@ $(ZIP): $(PROJECT)
 ifeq ($(BUILD), arm)
 	mkdir -p system/lib
 	cp -p /usr/arm-linux/lib/libfontconfig.so.1 system/lib
+endif
+ifeq ($(BUILD), arm_gnueabi)
+	mkdir -p system/lib
+	cp -p /usr/arm-none-linux-gnueabi/lib/libpbframework.so system/lib
 endif
 	mkdir -p system/fonts/pdf
 	cp -p fonts.conf system/fonts/pdf
