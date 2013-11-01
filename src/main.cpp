@@ -1177,8 +1177,22 @@ void new_synopsis_note()
 
 #endif
 
+#include <fontconfig/fontconfig.h>
+
+static void tweak_fontconfig()
+{
+#define FONTCONFIG_FILE USERFONTDIR "/pdf/fonts.conf"
+	FILE *fp = fopen(FONTCONFIG_FILE, "r");
+	if (fp) {
+		fclose(fp);
+		setenv("FONTCONFIG_FILE", FONTCONFIG_FILE, 1);
+	}
+}
+
 int main(int argc, char** argv)
 {
+	tweak_fontconfig();
+
         argc_main = argc;
         argv_main = argv;
 	SplashColor paperColor;
