@@ -1185,7 +1185,7 @@ static void tweak_fontconfig()
 	FILE *fp = fopen(FONTCONFIG_FILE, "r");
 	if (fp) {
 		fclose(fp);
-		setenv("FONTCONFIG_FILE", FONTCONFIG_FILE, 1);
+		setenv("FONTCONFIG_FILE", FONTCONFIG_FILE, 0);
 	}
 }
 
